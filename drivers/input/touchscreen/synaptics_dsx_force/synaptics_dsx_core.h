@@ -422,6 +422,7 @@ struct synaptics_rmi4_data {
 	struct pinctrl_state *pinctrl_state_active;
 	struct pinctrl_state *pinctrl_state_suspend;
 	struct synaptics_dsx_factory_param *factory_param;
+	ktime_t timestamp;
 
 	struct completion dump_completion;
 #ifdef CONFIG_TOUCH_DEBUG_FS
