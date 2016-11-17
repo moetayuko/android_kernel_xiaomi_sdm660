@@ -66,6 +66,7 @@
 #include "wlan_hdd_ipa.h"
 #include "cdp_txrx_flow_ctrl_legacy.h"
 #include "pld_common.h"
+#include "wlan_hdd_green_ap.h"
 
 static struct cds_conc_connection_info
 	conc_connection_list[MAX_NUMBER_OF_CONC_CONNECTIONS];
@@ -3467,6 +3468,8 @@ void cds_set_concurrency_mode(enum tQDF_ADAPTER_MODE mode)
 	cds_info("concurrency_mode = 0x%x Number of open sessions for mode %d = %d",
 		hdd_ctx->concurrency_mode, mode,
 		hdd_ctx->no_of_open_sessions[mode]);
+
+	hdd_green_ap_start_bss(hdd_ctx);
 }
 
 /**
@@ -3507,6 +3510,8 @@ void cds_clear_concurrency_mode(enum tQDF_ADAPTER_MODE mode)
 	cds_info("concurrency_mode = 0x%x Number of open sessions for mode %d = %d",
 		hdd_ctx->concurrency_mode, mode,
 		hdd_ctx->no_of_open_sessions[mode]);
+
+	hdd_green_ap_start_bss(hdd_ctx);
 }
 
 /**
@@ -7634,6 +7639,8 @@ void cds_restart_sap(hdd_adapter_t *ap_adapter)
 				      sap_config,
 				      ap_adapter->dev) != QDF_STATUS_SUCCESS) {
 			cds_err("SAP Start Bss fail");
+			wlansap_reset_sap_config_add_ie(sap_config,
+					eUPDATE_IE_ALL);
 			goto end;
 		}
 
@@ -7641,6 +7648,8 @@ void cds_restart_sap(hdd_adapter_t *ap_adapter)
 		qdf_status =
 			qdf_wait_single_event(&hostapd_state->qdf_event,
 					BSS_WAIT_TIMEOUT);
+		wlansap_reset_sap_config_add_ie(sap_config,
+				eUPDATE_IE_ALL);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			cds_err("SAP Start failed");
 			goto end;
@@ -8353,8 +8362,8 @@ uint8_t
 cds_get_nondfs_preferred_channel(enum cds_con_mode mode,
 		bool for_existing_conn)
 {
-	uint8_t pcl_channels[NUM_CHANNELS];
-	uint8_t pcl_weight[NUM_CHANNELS];
+	uint8_t pcl_channels[QDF_MAX_NUM_CHAN];
+	uint8_t pcl_weight[QDF_MAX_NUM_CHAN];
 
 	/*
 	 * in worst case if we can't find any channel at all

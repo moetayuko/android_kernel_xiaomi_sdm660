@@ -1070,10 +1070,10 @@ struct hdd_adapter_s {
 	int temperature;
 
 	/* Time stamp for last completed RoC request */
-	unsigned long last_roc_ts;
+	uint64_t last_roc_ts;
 
 	/* Time stamp for start RoC request */
-	unsigned long start_roc_ts;
+	uint64_t start_roc_ts;
 
 	/* State for synchronous OCB requests to WMI */
 	struct sir_ocb_set_config_response ocb_set_config_resp;
@@ -1309,8 +1309,6 @@ struct hdd_context_s {
 	/* Completion  variable to indicate Mc Thread Suspended */
 	struct completion mc_sus_event_var;
 
-	struct completion reg_init;
-
 	bool isMcThreadSuspended;
 
 #ifdef QCA_CONFIG_SMP
@@ -1408,8 +1406,6 @@ struct hdd_context_s {
 	int cur_tx_level;
 	uint64_t prev_tx;
 #endif
-	/* VHT80 allowed */
-	bool isVHT80Allowed;
 
 	struct completion ready_to_suspend;
 	/* defining the solution type */
@@ -1460,6 +1456,9 @@ struct hdd_context_s {
 #ifdef FEATURE_WLAN_AP_AP_ACS_OPTIMIZE
 	qdf_mc_timer_t skip_acs_scan_timer;
 	uint8_t skip_acs_scan_status;
+	uint8_t *last_acs_channel_list;
+	uint8_t num_of_channels;
+	qdf_spinlock_t acs_skip_lock;
 #endif
 
 	qdf_wake_lock_t sap_dfs_wakelock;
@@ -1961,5 +1960,13 @@ hdd_wlan_nla_put_u64(struct sk_buff *skb, int attrtype, u64 value)
 	return nla_put_u64_64bit(skb, attrtype, value, NL80211_ATTR_PAD);
 }
 #endif
+
+static inline int wlan_hdd_validate_session_id(u8 session_id)
+{
+	if (session_id != HDD_SESSION_ID_INVALID)
+		return 0;
+
+	return -EINVAL;
+}
 
 #endif /* end #if !defined(WLAN_HDD_MAIN_H) */

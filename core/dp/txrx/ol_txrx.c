@@ -1013,8 +1013,6 @@ ol_txrx_pdev_attach(ol_pdev_handle ctrl_pdev,
 	if (!pdev->htt_pdev)
 		goto fail3;
 
-	htt_register_rx_pkt_dump_callback(pdev->htt_pdev,
-			ol_rx_pkt_dump_call);
 	return pdev;
 
 fail3:
@@ -1658,7 +1656,6 @@ void ol_txrx_pdev_detach(ol_txrx_pdev_handle pdev, int force)
 		htt_tx_desc_free(pdev->htt_pdev, htt_tx_desc);
 	}
 
-	htt_deregister_rx_pkt_dump_callback(pdev->htt_pdev);
 	ol_tx_deregister_flow_control(pdev);
 	/* Stop the communication between HTT and target at first */
 	htt_detach_target(pdev->htt_pdev);
@@ -4116,36 +4113,6 @@ void
 ol_txrx_ipa_uc_set_active(ol_txrx_pdev_handle pdev, bool uc_active, bool is_tx)
 {
 	htt_h2t_ipa_uc_set_active(pdev->htt_pdev, uc_active, is_tx);
-}
-
-/**
- * ol_txrx_ipa_uc_fw_op_event_handler() - opcode event handler
- * @context: pdev context
- * @rxpkt: received packet
- * @staid: peer id
- *
- * Return: None
- */
-void ol_txrx_ipa_uc_fw_op_event_handler(void *context,
-					void *rxpkt,
-					uint16_t staid)
-{
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)context;
-
-	if (qdf_unlikely(!pdev)) {
-		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
-			      "%s: Invalid context", __func__);
-		qdf_mem_free(rxpkt);
-		return;
-	}
-
-	if (pdev->ipa_uc_op_cb) {
-		pdev->ipa_uc_op_cb(rxpkt, pdev->osif_dev);
-	} else {
-		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
-			      "%s: ipa_uc_op_cb NULL", __func__);
-		qdf_mem_free(rxpkt);
-	}
 }
 
 /**

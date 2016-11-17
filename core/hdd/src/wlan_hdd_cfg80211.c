@@ -1907,6 +1907,7 @@ __wlan_hdd_cfg80211_get_supported_features(struct wiphy *wiphy,
 	fset |= WIFI_FEATURE_AP_STA;
 #endif
 	fset |= WIFI_FEATURE_RSSI_MONITOR;
+	fset |= WIFI_FEATURE_TX_TRANSMIT_POWER;
 
 	if (hdd_link_layer_stats_supported())
 		fset |= WIFI_FEATURE_LINK_LAYER_STATS;
@@ -3914,6 +3915,7 @@ wlan_hdd_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_MGMT_RETRY] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_CTRL_RETRY] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_PROPAGATION_DELAY] = {.type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_TX_FAIL_COUNT] = {.type = NLA_U32 },
 };
 
 /**
@@ -3986,6 +3988,7 @@ __wlan_hdd_cfg80211_wifi_configuration_set(struct wiphy *wiphy,
 	QDF_STATUS qdf_status;
 	uint8_t retry, delay;
 	int param_id;
+	uint32_t tx_fail_count;
 
 	ENTER_DEV(dev);
 
@@ -4144,6 +4147,20 @@ __wlan_hdd_cfg80211_wifi_configuration_set(struct wiphy *wiphy,
 		param_id = WMI_PDEV_PARAM_PROPAGATION_DELAY;
 		ret_val = wma_cli_set_command(adapter->sessionId, param_id,
 					      delay, PDEV_CMD);
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_TX_FAIL_COUNT]) {
+		tx_fail_count = nla_get_u32(
+			tb[QCA_WLAN_VENDOR_ATTR_CONFIG_TX_FAIL_COUNT]);
+		if (tx_fail_count) {
+			status = sme_update_tx_fail_cnt_threshold(hdd_ctx->hHal,
+					adapter->sessionId, tx_fail_count);
+			if (QDF_STATUS_SUCCESS != status) {
+				hdd_info("sme_update_tx_fail_cnt_threshold (err=%d)",
+					status);
+				return -EINVAL;
+			}
+		}
 	}
 
 	if (vendor_ie_present && access_policy_present) {
@@ -4961,6 +4978,11 @@ __wlan_hdd_cfg80211_monitor_rssi(struct wiphy *wiphy,
 	};
 
 	ENTER_DEV(dev);
+
+	if (wlan_hdd_validate_session_id(adapter->sessionId)) {
+		hdd_err("invalid session id: %d", adapter->sessionId);
+		return -EINVAL;
+	}
 
 	ret = wlan_hdd_validate_context(hdd_ctx);
 	if (ret)
@@ -8582,6 +8604,17 @@ const struct wiphy_vendor_command hdd_wiphy_vendor_commands[] = {
 		.doit = wlan_hdd_cfg80211_encrypt_decrypt_msg
 	},
 #endif
+#ifdef FEATURE_WLAN_TDLS
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd =
+			QCA_NL80211_VENDOR_SUBCMD_CONFIGURE_TDLS,
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV |
+			 WIPHY_VENDOR_CMD_NEED_NETDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
+		.doit = wlan_hdd_cfg80211_configure_tdls_mode
+	}
+#endif
 };
 
 /**
@@ -8900,7 +8933,7 @@ int wlan_hdd_cfg80211_init(struct device *dev,
 #ifdef QCA_HT_2040_COEX
 	wiphy->features |= NL80211_FEATURE_AP_MODE_CHAN_WIDTH_CHANGE;
 #endif
-
+	wiphy->features |= NL80211_FEATURE_INACTIVITY_TIMER;
 	hdd_add_channel_switch_support(&wiphy->flags);
 
 	EXIT();
@@ -9280,6 +9313,11 @@ static int __wlan_hdd_cfg80211_change_bss(struct wiphy *wiphy,
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");
+		return -EINVAL;
+	}
+
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
 		return -EINVAL;
 	}
 
@@ -9690,6 +9728,11 @@ static int __wlan_hdd_change_station(struct wiphy *wiphy,
 			 TRACE_CODE_HDD_CHANGE_STATION,
 			 pAdapter->sessionId, params->listen_interval));
 
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
+		return -EINVAL;
+	}
+
 	pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
 	ret = wlan_hdd_validate_context(pHddCtx);
 	if (0 != ret)
@@ -9955,6 +9998,11 @@ static int __wlan_hdd_cfg80211_add_key(struct wiphy *wiphy,
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");
+		return -EINVAL;
+	}
+
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
 		return -EINVAL;
 	}
 
@@ -10414,6 +10462,11 @@ static int __wlan_hdd_cfg80211_set_default_key(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
+		return -EINVAL;
+	}
+
 	MTRACE(qdf_trace(QDF_MODULE_ID_HDD,
 			 TRACE_CODE_HDD_CFG80211_SET_DEFAULT_KEY,
 			 pAdapter->sessionId, key_index));
@@ -10673,8 +10726,14 @@ struct cfg80211_bss *wlan_hdd_cfg80211_inform_bss_frame(hdd_adapter_t *pAdapter,
 	qie_age->oui_2 = QCOM_OUI2;
 	qie_age->oui_3 = QCOM_OUI3;
 	qie_age->type = QCOM_VENDOR_IE_AGE_TYPE;
+	/*
+	 * Lowi expects the timestamp of bss in units of 1/10 ms. In driver
+	 * all bss related timestamp is in units of ms. Due to this when scan
+	 * results are sent to lowi the scan age is high.To address this,
+	 * send age in units of 1/10 ms.
+	 */
 	qie_age->age =
-		qdf_mc_timer_get_system_ticks() - bss_desc->nReceivedTime;
+		(qdf_mc_timer_get_system_time() - bss_desc->received_time)/10;
 	qie_age->tsf_delta = bss_desc->tsf_delta;
 	memcpy(&qie_age->beacon_tsf, bss_desc->timeStamp,
 	       sizeof(qie_age->beacon_tsf));
@@ -10812,6 +10871,11 @@ int wlan_hdd_cfg80211_update_bss(struct wiphy *wiphy,
 
 	ENTER();
 
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
+		return -EINVAL;
+	}
+
 	MTRACE(qdf_trace(QDF_MODULE_ID_HDD,
 			 TRACE_CODE_HDD_CFG80211_UPDATE_BSS,
 			 NO_SESSION, pAdapter->sessionId));
@@ -10848,7 +10912,7 @@ int wlan_hdd_cfg80211_update_bss(struct wiphy *wiphy,
 		 */
 		if ((scan_time == 0) ||
 			(scan_time <
-				pScanResult->BssDescriptor.nReceivedTime)) {
+				pScanResult->BssDescriptor.received_time)) {
 			bss_status =
 				wlan_hdd_cfg80211_inform_bss_frame(pAdapter,
 						&pScanResult->BssDescriptor);
@@ -12395,6 +12459,11 @@ static int __wlan_hdd_cfg80211_connect(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
+		return -EINVAL;
+	}
+
 	MTRACE(qdf_trace(QDF_MODULE_ID_HDD,
 			 TRACE_CODE_HDD_CFG80211_CONNECT,
 			 pAdapter->sessionId, pAdapter->device_mode));
@@ -12657,6 +12726,11 @@ static int __wlan_hdd_cfg80211_disconnect(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
+		return -EINVAL;
+	}
+
 	MTRACE(qdf_trace(QDF_MODULE_ID_HDD,
 			 TRACE_CODE_HDD_CFG80211_DISCONNECT,
 			 pAdapter->sessionId, reason));
@@ -12887,6 +12961,11 @@ static int __wlan_hdd_cfg80211_join_ibss(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
+		return -EINVAL;
+	}
+
 	MTRACE(qdf_trace(QDF_MODULE_ID_HDD,
 			 TRACE_CODE_HDD_CFG80211_JOIN_IBSS,
 			 pAdapter->sessionId, pAdapter->device_mode));
@@ -13086,6 +13165,11 @@ static int __wlan_hdd_cfg80211_leave_ibss(struct wiphy *wiphy,
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");
+		return -EINVAL;
+	}
+
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
 		return -EINVAL;
 	}
 
@@ -13407,6 +13491,11 @@ int __wlan_hdd_cfg80211_del_station(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
+		return -EINVAL;
+	}
+
 	MTRACE(qdf_trace(QDF_MODULE_ID_HDD,
 			 TRACE_CODE_HDD_CFG80211_DEL_STA,
 			 pAdapter->sessionId, pAdapter->device_mode));
@@ -13645,6 +13734,11 @@ static int __wlan_hdd_cfg80211_add_station(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
+		return -EINVAL;
+	}
+
 	MTRACE(qdf_trace(QDF_MODULE_ID_HDD,
 			 TRACE_CODE_HDD_CFG80211_ADD_STA,
 			 pAdapter->sessionId, params->listen_interval));
@@ -13721,6 +13815,11 @@ static int __wlan_hdd_cfg80211_set_pmksa(struct wiphy *wiphy,
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");
+		return -EINVAL;
+	}
+
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
 		return -EINVAL;
 	}
 
@@ -13805,6 +13904,11 @@ static int __wlan_hdd_cfg80211_del_pmksa(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
+		return -EINVAL;
+	}
+
 	if (!pmksa) {
 		hdd_err("pmksa is NULL");
 		return -EINVAL;
@@ -13885,6 +13989,11 @@ static int __wlan_hdd_cfg80211_flush_pmksa(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
+		return -EINVAL;
+	}
+
 	hdd_warn("Flushing PMKSA");
 
 	pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
@@ -13953,6 +14062,11 @@ __wlan_hdd_cfg80211_update_ft_ies(struct wiphy *wiphy,
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");
+		return -EINVAL;
+	}
+
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
 		return -EINVAL;
 	}
 
@@ -14084,6 +14198,11 @@ int __wlan_hdd_cfg80211_set_rekey_data(struct wiphy *wiphy,
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");
+		return -EINVAL;
+	}
+
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
 		return -EINVAL;
 	}
 
@@ -14578,6 +14697,11 @@ __wlan_hdd_cfg80211_set_ap_channel_width(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
+		return -EINVAL;
+	}
+
 	pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
 	status = wlan_hdd_validate_context(pHddCtx);
 	if (status)
@@ -14684,6 +14808,11 @@ static int __wlan_hdd_cfg80211_channel_switch(struct wiphy *wiphy,
 
 	hdd_notice("Set Freq %d",
 		  csa_params->chandef.chan->center_freq);
+
+	if (wlan_hdd_validate_session_id(adapter->sessionId)) {
+		hdd_err("invalid session id: %d", adapter->sessionId);
+		return -EINVAL;
+	}
 
 	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	ret = wlan_hdd_validate_context(hdd_ctx);
@@ -14861,6 +14990,28 @@ static int wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
 	ret = __wlan_hdd_cfg80211_set_mon_ch(wiphy, chandef);
 	cds_ssr_unprotect(__func__);
 	return ret;
+}
+
+/**
+ * wlan_hdd_clear_link_layer_stats() - clear link layer stats
+ * @adapter: pointer to adapter
+ *
+ * Wrapper function to clear link layer stats.
+ * return - void
+ */
+void wlan_hdd_clear_link_layer_stats(hdd_adapter_t *adapter)
+{
+	tSirLLStatsClearReq link_layer_stats_clear_req;
+	tHalHandle hal = WLAN_HDD_GET_HAL_CTX(adapter);
+
+	link_layer_stats_clear_req.statsClearReqMask = WIFI_STATS_IFACE_AC |
+		WIFI_STATS_IFACE_ALL_PEER;
+	link_layer_stats_clear_req.stopReq = 0;
+	link_layer_stats_clear_req.reqId = 1;
+	link_layer_stats_clear_req.staId = adapter->sessionId;
+	sme_ll_stats_clear_req(hal, &link_layer_stats_clear_req);
+
+	return;
 }
 
 /**

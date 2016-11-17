@@ -106,10 +106,8 @@ QDF_STATUS wlansap_scan_callback(tHalHandle hal_handle,
 	tWLAN_SAPEvent sapEvent;        /* State machine event */
 	uint8_t operChannel = 0;
 	QDF_STATUS sap_sm_status;
-
-#ifdef SOFTAP_CHANNEL_RANGE
 	uint32_t event;
-#endif
+
 
 	if (NULL == hal_handle) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
@@ -207,6 +205,7 @@ QDF_STATUS wlansap_scan_callback(tHalHandle hal_handle,
 		 * the result */
 		qdf_mem_free(sap_ctx->channelList);
 		sap_ctx->channelList = NULL;
+		sap_ctx->num_of_channel = 0;
 	}
 #endif
 
@@ -412,6 +411,7 @@ wlansap_pre_start_bss_acs_scan_callback(tHalHandle hal_handle, void *pcontext,
 		*/
 		qdf_mem_free(sap_ctx->channelList);
 		sap_ctx->channelList = NULL;
+		sap_ctx->num_of_channel = 0;
 	}
 #endif
 	QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,

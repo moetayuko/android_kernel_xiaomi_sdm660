@@ -237,7 +237,8 @@ void lim_perform_ft_pre_auth(tpAniSirGlobal pMac, QDF_STATUS status,
 	if (psessionEntry->is11Rconnection &&
 	    psessionEntry->ftPEContext.pFTPreAuthReq) {
 		/* Only 11r assoc has FT IEs */
-		if (psessionEntry->ftPEContext.pFTPreAuthReq->ft_ies == NULL) {
+		if (psessionEntry->ftPEContext.pFTPreAuthReq->ft_ies_length
+									== 0) {
 			lim_log(pMac, LOGE,
 				FL("FTIEs for Auth Req Seq 1 is absent"));
 			goto preauth_fail;
@@ -468,6 +469,12 @@ void lim_handle_ft_pre_auth_rsp(tpAniSirGlobal pMac, tSirRetStatus status,
 			     &(psessionEntry->htConfig),
 			     sizeof(psessionEntry->htConfig));
 		pftSessionEntry->limSmeState = eLIM_SME_WT_REASSOC_STATE;
+
+		if (IS_5G_CH(psessionEntry->ftPEContext.pFTPreAuthReq->
+			preAuthchannelNum))
+			pftSessionEntry->vdev_nss = pMac->vdev_type_nss_5g.sta;
+		else
+			pftSessionEntry->vdev_nss = pMac->vdev_type_nss_2g.sta;
 
 		lim_log(pMac, LOG1, FL("created session (%p) with id = %d"),
 			pftSessionEntry, pftSessionEntry->peSessionId);

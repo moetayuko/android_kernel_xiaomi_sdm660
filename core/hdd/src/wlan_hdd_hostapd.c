@@ -961,6 +961,78 @@ static void wlan_hdd_sap_pre_cac_success(void *data)
 	}
 }
 
+#ifdef FEATURE_WLAN_AP_AP_ACS_OPTIMIZE
+/**
+ * hdd_handle_acs_scan_event() - handle acs scan event for SAP
+ * @sap_event: tpSap_Event
+ * @adapter: hdd_adapter_t for SAP
+ *
+ * The function is to handle the eSAP_ACS_SCAN_SUCCESS_EVENT event.
+ * It will update scan result to cfg80211 and start a timer to flush the
+ * cached acs scan result.
+ *
+ * Return: QDF_STATUS_SUCCESS on success,
+ *      other value on failure
+ */
+static QDF_STATUS hdd_handle_acs_scan_event(tpSap_Event sap_event,
+		hdd_adapter_t *adapter)
+{
+	hdd_context_t *hdd_ctx;
+	struct sap_acs_scan_complete_event *comp_evt;
+	QDF_STATUS qdf_status;
+	int chan_list_size;
+
+	hdd_ctx = (hdd_context_t *)(adapter->pHddCtx);
+	if (!hdd_ctx) {
+		hdd_err("HDD context is null");
+		return QDF_STATUS_E_FAILURE;
+	}
+	comp_evt = &sap_event->sapevt.sap_acs_scan_comp;
+	hdd_ctx->skip_acs_scan_status = eSAP_SKIP_ACS_SCAN;
+	qdf_spin_lock(&hdd_ctx->acs_skip_lock);
+	qdf_mem_free(hdd_ctx->last_acs_channel_list);
+	hdd_ctx->last_acs_channel_list = NULL;
+	hdd_ctx->num_of_channels = 0;
+	/* cache the previous ACS scan channel list .
+	 * If the following OBSS scan chan list is covered by ACS chan list,
+	 * we can skip OBSS Scan to save SAP starting total time.
+	 */
+	if (comp_evt->num_of_channels && comp_evt->channellist) {
+		chan_list_size = comp_evt->num_of_channels *
+			sizeof(comp_evt->channellist[0]);
+		hdd_ctx->last_acs_channel_list = qdf_mem_malloc(
+			chan_list_size);
+		if (hdd_ctx->last_acs_channel_list) {
+			qdf_mem_copy(hdd_ctx->last_acs_channel_list,
+				comp_evt->channellist,
+				chan_list_size);
+			hdd_ctx->num_of_channels = comp_evt->num_of_channels;
+		}
+	}
+	qdf_spin_unlock(&hdd_ctx->acs_skip_lock);
+	/* Update ACS scan result to cfg80211. Then OBSS scan can reuse the
+	 * scan result.
+	 */
+	if (wlan_hdd_cfg80211_update_bss(hdd_ctx->wiphy, adapter, 0))
+		hdd_info("NO SCAN result");
+
+	hdd_info("Reusing Last ACS scan result for %d sec",
+		ACS_SCAN_EXPIRY_TIMEOUT_S);
+	qdf_mc_timer_stop(&hdd_ctx->skip_acs_scan_timer);
+	qdf_status = qdf_mc_timer_start(&hdd_ctx->skip_acs_scan_timer,
+			ACS_SCAN_EXPIRY_TIMEOUT_S * 1000);
+	if (!QDF_IS_STATUS_SUCCESS(qdf_status))
+		hdd_err("Failed to start ACS scan expiry timer");
+	return QDF_STATUS_SUCCESS;
+}
+#else
+static QDF_STATUS hdd_handle_acs_scan_event(tpSap_Event sap_event,
+		hdd_adapter_t *adapter)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+
 QDF_STATUS hdd_hostapd_sap_event_cb(tpSap_Event pSapEvent,
 				    void *usrDataForCallback)
 {
@@ -1880,21 +1952,8 @@ QDF_STATUS hdd_hostapd_sap_event_cb(tpSap_Event pSapEvent,
 			return hdd_chan_change_notify(pHostapdAdapter, dev,
 							chan_change);
 		}
-
-#ifdef FEATURE_WLAN_AP_AP_ACS_OPTIMIZE
 	case eSAP_ACS_SCAN_SUCCESS_EVENT:
-		pHddCtx->skip_acs_scan_status = eSAP_SKIP_ACS_SCAN;
-		hdd_notice("Reusing Last ACS scan result for %d sec",
-		       ACS_SCAN_EXPIRY_TIMEOUT_S);
-		qdf_mc_timer_stop(&pHddCtx->skip_acs_scan_timer);
-		qdf_status = qdf_mc_timer_start(&pHddCtx->skip_acs_scan_timer,
-						ACS_SCAN_EXPIRY_TIMEOUT_S *
-						1000);
-		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
-			hdd_err("Failed to start ACS scan expiry timer");
-		return QDF_STATUS_SUCCESS;
-#endif
-
+		return hdd_handle_acs_scan_event(pSapEvent, pHostapdAdapter);
 	case eSAP_DFS_NOL_GET:
 		hdd_notice("Received eSAP_DFS_NOL_GET event");
 
@@ -6028,7 +6087,7 @@ int wlan_hdd_set_channel(struct wiphy *wiphy,
 	hdd_context_t *pHddCtx;
 	int status;
 
-	tSmeConfigParams smeConfig;
+	tSmeConfigParams *sme_config;
 	tsap_Config_t *sap_config;
 
 	ENTER();
@@ -6149,12 +6208,17 @@ int wlan_hdd_set_channel(struct wiphy *wiphy,
 			sap_config->channel = channel;
 			sap_config->ch_params.center_freq_seg1 = channel_seg2;
 
-			qdf_mem_zero(&smeConfig, sizeof(smeConfig));
-			sme_get_config_param(pHddCtx->hHal, &smeConfig);
+			sme_config = qdf_mem_malloc(sizeof(*sme_config));
+
+			if (!sme_config) {
+				hdd_err("Unable to allocate memory for smeconfig!");
+				return -ENOMEM;
+			}
+			sme_get_config_param(pHddCtx->hHal, sme_config);
 			switch (channel_type) {
 			case NL80211_CHAN_HT20:
 			case NL80211_CHAN_NO_HT:
-				smeConfig.csrConfig.obssEnabled = false;
+				sme_config->csrConfig.obssEnabled = false;
 				sap_config->sec_ch = 0;
 				break;
 			case NL80211_CHAN_HT40MINUS:
@@ -6165,11 +6229,14 @@ int wlan_hdd_set_channel(struct wiphy *wiphy,
 				break;
 			default:
 				hdd_err("Error!!! Invalid HT20/40 mode !");
+				qdf_mem_free(sme_config);
 				return -EINVAL;
 			}
-			smeConfig.csrConfig.obssEnabled = wlan_hdd_get_sap_obss(
-								pAdapter);
-			sme_update_config(pHddCtx->hHal, &smeConfig);
+			sme_config->csrConfig.obssEnabled =
+				wlan_hdd_get_sap_obss(pAdapter);
+
+			sme_update_config(pHddCtx->hHal, sme_config);
+			qdf_mem_free(sme_config);
 		}
 	} else {
 		hdd_err("Invalid device mode failed to set valid channel");
@@ -6235,7 +6302,7 @@ static void wlan_hdd_check_11gmode(u8 *pIe, u8 *require_ht, u8 *require_vht,
  * Return: 0 for success non-zero for failure
  */
 static int wlan_hdd_add_ie(hdd_adapter_t *pHostapdAdapter, uint8_t *genie,
-			   uint8_t *total_ielen, uint8_t *oui,
+			   uint16_t *total_ielen, uint8_t *oui,
 			   uint8_t oui_size)
 {
 	uint16_t ielen = 0;
@@ -6268,7 +6335,7 @@ static int wlan_hdd_add_ie(hdd_adapter_t *pHostapdAdapter, uint8_t *genie,
  */
 static void wlan_hdd_add_hostapd_conf_vsie(hdd_adapter_t *pHostapdAdapter,
 					   uint8_t *genie,
-					   uint8_t *total_ielen)
+					   uint16_t *total_ielen)
 {
 	beacon_data_t *pBeacon = pHostapdAdapter->sessionCtx.ap.beacon;
 	int left = pBeacon->tail_len;
@@ -6341,7 +6408,7 @@ static void wlan_hdd_add_hostapd_conf_vsie(hdd_adapter_t *pHostapdAdapter,
  * Return: none
  */
 static void wlan_hdd_add_extra_ie(hdd_adapter_t *pHostapdAdapter,
-				  uint8_t *genie, uint8_t *total_ielen,
+				  uint8_t *genie, uint16_t *total_ielen,
 				  uint8_t temp_ie_id)
 {
 	beacon_data_t *pBeacon = pHostapdAdapter->sessionCtx.ap.beacon;
@@ -6492,6 +6559,23 @@ wlan_hdd_cfg80211_alloc_new_beacon(hdd_adapter_t *pAdapter,
 
 }
 
+#ifdef QCA_HT_2040_COEX
+static void wlan_hdd_add_sap_obss_scan_ie(
+	hdd_adapter_t *hostapd_adapter, uint8_t *ie_buf, uint16_t *ie_len)
+{
+	if (QDF_SAP_MODE == hostapd_adapter->device_mode) {
+		if (wlan_hdd_get_sap_obss(hostapd_adapter))
+			wlan_hdd_add_extra_ie(hostapd_adapter, ie_buf, ie_len,
+					WLAN_EID_OVERLAP_BSS_SCAN_PARAM);
+	}
+}
+#else
+static void wlan_hdd_add_sap_obss_scan_ie(
+	hdd_adapter_t *hostapd_adapter, uint8_t *ie_buf, uint16_t *ie_len)
+{
+}
+#endif
+
 /**
  * wlan_hdd_cfg80211_update_apies() - update ap mode ies
  * @adapter: Pointer to hostapd adapter
@@ -6501,11 +6585,13 @@ wlan_hdd_cfg80211_alloc_new_beacon(hdd_adapter_t *pAdapter,
 int wlan_hdd_cfg80211_update_apies(hdd_adapter_t *adapter)
 {
 	uint8_t *genie;
-	uint8_t total_ielen = 0;
+	uint16_t total_ielen = 0;
 	int ret = 0;
 	tsap_Config_t *pConfig;
 	tSirUpdateIE updateIE;
 	beacon_data_t *beacon = NULL;
+	uint16_t proberesp_ies_len;
+	uint8_t *proberesp_ies = NULL;
 
 	pConfig = &adapter->sessionCtx.ap.sapConfig;
 	beacon = adapter->sessionCtx.ap.beacon;
@@ -6559,18 +6645,8 @@ int wlan_hdd_cfg80211_update_apies(hdd_adapter_t *adapter)
 		goto done;
 	}
 
-#ifdef QCA_HT_2040_COEX
-	if (QDF_SAP_MODE == adapter->device_mode) {
-		tSmeConfigParams smeConfig;
-		qdf_mem_zero(&smeConfig, sizeof(smeConfig));
-		sme_get_config_param(WLAN_HDD_GET_HAL_CTX(adapter),
-				     &smeConfig);
-		if (smeConfig.csrConfig.obssEnabled)
-			wlan_hdd_add_extra_ie(adapter, genie,
-					      &total_ielen,
-					      WLAN_EID_OVERLAP_BSS_SCAN_PARAM);
-	}
-#endif
+	wlan_hdd_add_sap_obss_scan_ie(adapter, genie, &total_ielen);
+
 	qdf_copy_macaddr(&updateIE.bssid, &adapter->macAddressCurrent);
 	updateIE.smeSessionId = adapter->sessionId;
 
@@ -6596,9 +6672,24 @@ int wlan_hdd_cfg80211_update_apies(hdd_adapter_t *adapter)
 	}
 
 	/* Added for Probe Response IE */
+	proberesp_ies = qdf_mem_malloc(beacon->proberesp_ies_len +
+				      MAX_GENIE_LEN);
+	if (proberesp_ies == NULL) {
+		hdd_err("mem alloc failed for probe resp ies %d",
+			proberesp_ies_len);
+		ret = -EINVAL;
+		goto done;
+	}
+	qdf_mem_copy(proberesp_ies, beacon->proberesp_ies,
+		    beacon->proberesp_ies_len);
+	proberesp_ies_len = beacon->proberesp_ies_len;
+
+	wlan_hdd_add_sap_obss_scan_ie(adapter, proberesp_ies,
+				     &proberesp_ies_len);
+
 	if (test_bit(SOFTAP_BSS_STARTED, &adapter->event_flags)) {
-		updateIE.ieBufferlength = beacon->proberesp_ies_len;
-		updateIE.pAdditionIEBuffer = (uint8_t *) beacon->proberesp_ies;
+		updateIE.ieBufferlength = proberesp_ies_len;
+		updateIE.pAdditionIEBuffer = proberesp_ies;
 		updateIE.append = false;
 		updateIE.notify = false;
 		if (sme_update_add_ie(WLAN_HDD_GET_HAL_CTX(adapter),
@@ -6612,8 +6703,8 @@ int wlan_hdd_cfg80211_update_apies(hdd_adapter_t *adapter)
 		wlansap_reset_sap_config_add_ie(pConfig, eUPDATE_IE_PROBE_RESP);
 	} else {
 		wlansap_update_sap_config_add_ie(pConfig,
-						 beacon->proberesp_ies,
-						 beacon->proberesp_ies_len,
+						 proberesp_ies,
+						 proberesp_ies_len,
 						 eUPDATE_IE_PROBE_RESP);
 	}
 
@@ -6641,6 +6732,7 @@ int wlan_hdd_cfg80211_update_apies(hdd_adapter_t *adapter)
 
 done:
 	qdf_mem_free(genie);
+	qdf_mem_free(proberesp_ies);
 	return ret;
 }
 
@@ -7408,26 +7500,8 @@ int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
 	sme_update_config(pHddCtx->hHal, &sme_config);
 
 	if (!pHddCtx->config->sap_force_11n_for_11ac) {
-		if (pConfig->ch_width_orig == NL80211_CHAN_WIDTH_80P80) {
-			if (pHddCtx->isVHT80Allowed == false)
-				pConfig->ch_width_orig = CH_WIDTH_40MHZ;
-			else
-				pConfig->ch_width_orig = CH_WIDTH_80P80MHZ;
-		} else if (pConfig->ch_width_orig == NL80211_CHAN_WIDTH_160) {
-			if (pHddCtx->isVHT80Allowed == false)
-				pConfig->ch_width_orig = CH_WIDTH_40MHZ;
-			else
-				pConfig->ch_width_orig = CH_WIDTH_160MHZ;
-		} else if (pConfig->ch_width_orig == NL80211_CHAN_WIDTH_80) {
-			if (pHddCtx->isVHT80Allowed == false)
-				pConfig->ch_width_orig = CH_WIDTH_40MHZ;
-			else
-				pConfig->ch_width_orig = CH_WIDTH_80MHZ;
-		} else if (pConfig->ch_width_orig == NL80211_CHAN_WIDTH_40) {
-			pConfig->ch_width_orig = CH_WIDTH_40MHZ;
-		} else {
-			pConfig->ch_width_orig = CH_WIDTH_20MHZ;
-		}
+		pConfig->ch_width_orig =
+			hdd_map_nl_chan_width(pConfig->ch_width_orig);
 	} else {
 		if (pConfig->ch_width_orig >= NL80211_CHAN_WIDTH_40)
 			pConfig->ch_width_orig = CH_WIDTH_40MHZ;
@@ -7607,6 +7681,11 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");
+		return -EINVAL;
+	}
+
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
 		return -EINVAL;
 	}
 
@@ -7825,12 +7904,18 @@ static int __wlan_hdd_cfg80211_start_ap(struct wiphy *wiphy,
 	hdd_context_t *pHddCtx;
 	enum hw_mode_bandwidth channel_width;
 	int status;
+	struct sme_sta_inactivity_timeout  *sta_inactivity_timer;
 	uint8_t channel;
 
 	ENTER();
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");
+		return -EINVAL;
+	}
+
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
 		return -EINVAL;
 	}
 
@@ -7988,6 +8073,20 @@ static int __wlan_hdd_cfg80211_start_ap(struct wiphy *wiphy,
 				&params->beacon,
 				params->ssid, params->ssid_len,
 				params->hidden_ssid, true);
+
+		if (pHddCtx->config->sap_max_inactivity_override) {
+			sta_inactivity_timer = qdf_mem_malloc(
+					sizeof(*sta_inactivity_timer));
+			if (!sta_inactivity_timer) {
+				hdd_err("Failed to allocate Memory");
+				return QDF_STATUS_E_FAILURE;
+			}
+			sta_inactivity_timer->session_id = pAdapter->sessionId;
+			sta_inactivity_timer->sta_inactivity_timeout =
+				params->inactivity_timeout;
+			sme_update_sta_inactivity_timeout(WLAN_HDD_GET_HAL_CTX
+					(pAdapter), sta_inactivity_timer);
+		}
 	}
 
 	EXIT();
@@ -8036,6 +8135,11 @@ static int __wlan_hdd_cfg80211_change_beacon(struct wiphy *wiphy,
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");
+		return -EINVAL;
+	}
+
+	if (wlan_hdd_validate_session_id(pAdapter->sessionId)) {
+		hdd_err("invalid session id: %d", pAdapter->sessionId);
 		return -EINVAL;
 	}
 

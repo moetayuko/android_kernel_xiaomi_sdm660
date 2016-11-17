@@ -71,7 +71,7 @@
 #define RRM_ROAM_SCORE_NEIGHBOR_IAPP_LIST                       30
 #endif
 
-unsigned long rrm_scan_timer;
+uint64_t rrm_scan_timer;
 
 /**
  * rrm_ll_purge_neighbor_cache() -Purges all the entries in the neighbor cache
@@ -529,7 +529,7 @@ static QDF_STATUS sme_rrm_send_scan_result(tpAniSirGlobal mac_ctx,
 
 	while (scan_results) {
 		next_result = sme_scan_result_get_next(mac_ctx, result_handle);
-		sms_log(mac_ctx, LOG1, "Scan res timer:%lu, rrm scan timer:%lu",
+		sms_log(mac_ctx, LOG1, "Scan res timer:%lu, rrm scan timer:%llu",
 				scan_results->timer, rrm_scan_timer);
 		if (scan_results->timer >= rrm_scan_timer) {
 			roam_info->pBssDesc = &scan_results->BssDescriptor;
@@ -650,8 +650,9 @@ static QDF_STATUS sme_rrm_issue_scan_req(tpAniSirGlobal mac_ctx)
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	tpRrmSMEContext sme_rrm_ctx = &mac_ctx->rrm.rrmSmeContext;
 	uint32_t session_id;
+	uint32_t max_chan_time;
 	tSirScanType scan_type;
-	unsigned long current_time;
+	uint64_t current_time;
 
 	status = csr_roam_get_session_id_from_bssid(mac_ctx,
 			&sme_rrm_ctx->sessionBssId, &session_id);
@@ -709,6 +710,23 @@ static QDF_STATUS sme_rrm_issue_scan_req(tpAniSirGlobal mac_ctx)
 
 		sms_log(mac_ctx, LOG1, FL("Scan Type(%d) Max Dwell Time(%d)"),
 				scan_req.scanType, scan_req.maxChnTime);
+		/*
+		 * Use gPassive/gActiveMaxChannelTime if maxChanTime is less
+		 * than default.
+		 */
+		if (eSIR_ACTIVE_SCAN == scan_type)
+			max_chan_time =
+				mac_ctx->roam.configParam.nActiveMaxChnTime;
+		else
+			max_chan_time =
+				mac_ctx->roam.configParam.nPassiveMaxChnTime;
+
+		if (scan_req.maxChnTime < max_chan_time) {
+			scan_req.maxChnTime = max_chan_time;
+			sms_log(mac_ctx, LOG1,
+				FL("Setting default max %d ChanTime"),
+				max_chan_time);
+		}
 
 		/*
 		 * For RRM scans timing is very important especially when the
@@ -720,8 +738,8 @@ static QDF_STATUS sme_rrm_issue_scan_req(tpAniSirGlobal mac_ctx)
 		 * and hence there is a check to see if the requests are atleast
 		 * 1 second apart.
 		 */
-		current_time = qdf_mc_timer_get_system_time();
-		sms_log(mac_ctx, LOG1, "prev scan triggered before %ld ms, totalchannels %d",
+		current_time = (uint64_t)qdf_mc_timer_get_system_time();
+		sms_log(mac_ctx, LOG1, "prev scan triggered before %llu ms, totalchannels %d",
 				current_time - rrm_scan_timer,
 				sme_rrm_ctx->channelList.numOfChannels);
 		if ((abs(current_time - rrm_scan_timer) > 1000) &&
@@ -731,7 +749,7 @@ static QDF_STATUS sme_rrm_issue_scan_req(tpAniSirGlobal mac_ctx)
 			scan_req.idle_time = 1;
 		}
 
-		rrm_scan_timer = qdf_mc_timer_get_system_time();
+		rrm_scan_timer = (uint64_t)qdf_mc_timer_get_system_time();
 
 		/* set BSSType to default type */
 		scan_req.BSSType = eCSR_BSS_TYPE_ANY;

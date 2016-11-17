@@ -4036,6 +4036,18 @@ REG_TABLE_ENTRY g_registry_table[] = {
 		CFG_RX_AGGREGATION_SIZE_DEFAULT,
 		CFG_RX_AGGREGATION_SIZE_MIN,
 		CFG_RX_AGGREGATION_SIZE_MAX),
+	REG_VARIABLE(CFG_SAP_MAX_INACTIVITY_OVERRIDE_NAME, WLAN_PARAM_Integer,
+		struct hdd_config, sap_max_inactivity_override,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_SAP_MAX_INACTIVITY_OVERRIDE_DEFAULT,
+		CFG_SAP_MAX_INACTIVITY_OVERRIDE_MIN,
+		CFG_SAP_MAX_INACTIVITY_OVERRIDE_MAX),
+	REG_VARIABLE(CFG_CRASH_FW_TIMEOUT_NAME, WLAN_PARAM_Integer,
+		struct hdd_config, fw_timeout_crash,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_CRASH_FW_TIMEOUT_DEFAULT,
+		CFG_CRASH_FW_TIMEOUT_DISABLE,
+		CFG_CRASH_FW_TIMEOUT_ENABLE),
 };
 
 /**
@@ -5701,6 +5713,9 @@ void hdd_cfg_print(hdd_context_t *pHddCtx)
 	hdd_info("Name = [%s] Value = [%u]",
 		 CFG_TGT_GTX_USR_CFG_NAME,
 		 pHddCtx->config->tgt_gtx_usr_cfg);
+	hdd_info("Name = [%s] Value = [%u]",
+		CFG_SAP_MAX_INACTIVITY_OVERRIDE_NAME,
+		pHddCtx->config->sap_max_inactivity_override);
 	hdd_ndp_print_ini_config(pHddCtx);
 	hdd_info("Name = [%s] Value = [%s]",
 		CFG_RM_CAPABILITY_NAME,
@@ -5717,6 +5732,9 @@ void hdd_cfg_print(hdd_context_t *pHddCtx)
 	hdd_info("Name = [%s] Value = [%u]",
 		CFG_ENABLE_GO_CTS2SELF_FOR_STA,
 		pHddCtx->config->enable_go_cts2self_for_sta);
+	hdd_info("Name = [%s] Value = [%u]",
+		CFG_CRASH_FW_TIMEOUT_NAME,
+		pHddCtx->config->fw_timeout_crash);
 }
 
 

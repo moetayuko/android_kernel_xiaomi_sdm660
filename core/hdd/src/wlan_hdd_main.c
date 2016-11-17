@@ -591,77 +591,6 @@ int wlan_hdd_validate_context(hdd_context_t *hdd_ctx)
 	return 0;
 }
 
-void hdd_checkandupdate_phymode(hdd_context_t *hdd_ctx)
-{
-	hdd_adapter_t *adapter = NULL;
-	hdd_station_ctx_t *pHddStaCtx = NULL;
-	eCsrPhyMode phyMode;
-	struct hdd_config *cfg_param = NULL;
-
-	if (NULL == hdd_ctx) {
-		hdd_alert("HDD Context is null !!");
-		return;
-	}
-
-	adapter = hdd_get_adapter(hdd_ctx, QDF_STA_MODE);
-	if (NULL == adapter) {
-		hdd_alert("adapter is null !!");
-		return;
-	}
-
-	pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
-
-	cfg_param = hdd_ctx->config;
-	if (NULL == cfg_param) {
-		hdd_alert("cfg_params not available !!");
-		return;
-	}
-
-	phyMode = sme_get_phy_mode(WLAN_HDD_GET_HAL_CTX(adapter));
-
-	if (!hdd_ctx->isVHT80Allowed) {
-		if ((eCSR_DOT11_MODE_AUTO == phyMode) ||
-		    (eCSR_DOT11_MODE_11ac == phyMode) ||
-		    (eCSR_DOT11_MODE_11ac_ONLY == phyMode)) {
-			hdd_notice("Setting phymode to 11n!!");
-			sme_set_phy_mode(WLAN_HDD_GET_HAL_CTX(adapter),
-					 eCSR_DOT11_MODE_11n);
-		}
-	} else {
-		/*
-		 * New country Supports 11ac as well resetting value back from
-		 * .ini
-		 */
-		sme_set_phy_mode(WLAN_HDD_GET_HAL_CTX(adapter),
-				 hdd_cfg_xlate_to_csr_phy_mode(cfg_param->
-							       dot11Mode));
-		return;
-	}
-
-	if ((eConnectionState_Associated == pHddStaCtx->conn_info.connState) &&
-	    ((eCSR_CFG_DOT11_MODE_11AC_ONLY == pHddStaCtx->conn_info.dot11Mode)
-	     || (eCSR_CFG_DOT11_MODE_11AC ==
-		 pHddStaCtx->conn_info.dot11Mode))) {
-		QDF_STATUS qdf_status;
-
-		/* need to issue a disconnect to CSR. */
-		INIT_COMPLETION(adapter->disconnect_comp_var);
-		qdf_status = sme_roam_disconnect(WLAN_HDD_GET_HAL_CTX(adapter),
-						 adapter->sessionId,
-						 eCSR_DISCONNECT_REASON_UNSPECIFIED);
-
-		if (QDF_STATUS_SUCCESS == qdf_status) {
-			unsigned long rc;
-
-			rc = wait_for_completion_timeout(
-				&adapter->disconnect_comp_var,
-				msecs_to_jiffies(WLAN_WAIT_TIME_DISCONNECT));
-			if (!rc)
-				hdd_err("failure waiting for disconnect_comp_var");
-		}
-	}
-}
-
 /**
  * hdd_set_ibss_power_save_params() - update IBSS Power Save params to WMA.
  * @hdd_adapter_t Hdd adapter.
@@ -3314,7 +3243,7 @@ hdd_adapter_t *hdd_open_adapter(hdd_context_t *hdd_ctx, uint8_t session_type,
 		status = hdd_register_interface(adapter, rtnl_held);
 		if (QDF_STATUS_SUCCESS != status) {
 			hdd_deinit_adapter(hdd_ctx, adapter, rtnl_held);
-			goto err_lro_cleanup;
+			goto err_free_netdev;
 		}
 
 		/* Stop the Interface TX queue. */
@@ -3411,7 +3340,7 @@ hdd_adapter_t *hdd_open_adapter(hdd_context_t *hdd_ctx, uint8_t session_type,
 		/* Initialize the WoWL service */
 		if (!hdd_init_wowl(adapter)) {
 			hdd_alert("hdd_init_wowl failed");
-			goto err_lro_cleanup;
+			goto err_close_adapter;
 		}
 
 		/* Adapter successfully added. Increment the vdev count */
@@ -3428,11 +3357,11 @@ hdd_adapter_t *hdd_open_adapter(hdd_context_t *hdd_ctx, uint8_t session_type,
 
 	return adapter;
 
-err_lro_cleanup:
-	hdd_lro_disable(hdd_ctx, adapter);
+err_close_adapter:
+	hdd_close_adapter(hdd_ctx, adapter, rtnl_held);
 err_free_netdev:
-	free_netdev(adapter->dev);
 	wlan_hdd_release_intf_addr(hdd_ctx, adapter->macAddressCurrent.bytes);
+	free_netdev(adapter->dev);
 
 	return NULL;
 }
@@ -4439,6 +4368,45 @@ QDF_STATUS hdd_abort_mac_scan_all_adapters(hdd_context_t *hdd_ctx)
 	return QDF_STATUS_SUCCESS;
 }
 
+/**
+ * hdd_abort_sched_scan_all_adapters() - stops scheduled (PNO) scans for all
+ * adapters
+ * @hdd_ctx: The HDD context containing the adapters to operate on
+ *
+ * return: QDF_STATUS_SUCCESS
+ */
+static QDF_STATUS hdd_abort_sched_scan_all_adapters(hdd_context_t *hdd_ctx)
+{
+	hdd_adapter_list_node_t *adapter_node = NULL, *next_node = NULL;
+	QDF_STATUS status;
+	hdd_adapter_t *adapter;
+	int err;
+
+	ENTER();
+
+	status = hdd_get_front_adapter(hdd_ctx, &adapter_node);
+
+	while (NULL != adapter_node && QDF_STATUS_SUCCESS == status) {
+		adapter = adapter_node->pAdapter;
+		if ((adapter->device_mode == QDF_STA_MODE) ||
+		    (adapter->device_mode == QDF_P2P_CLIENT_MODE) ||
+		    (adapter->device_mode == QDF_IBSS_MODE) ||
+		    (adapter->device_mode == QDF_P2P_DEVICE_MODE) ||
+		    (adapter->device_mode == QDF_SAP_MODE) ||
+		    (adapter->device_mode == QDF_P2P_GO_MODE)) {
+			err = wlan_hdd_sched_scan_stop(adapter->dev);
+			if (err)
+				hdd_err("Unable to stop scheduled scan");
+		}
+		status = hdd_get_next_adapter(hdd_ctx, adapter_node, &next_node);
+		adapter_node = next_node;
+	}
+
+	EXIT();
+
+	return QDF_STATUS_SUCCESS;
+}
+
 #ifdef WLAN_NS_OFFLOAD
 /**
  * hdd_wlan_unregister_ip6_notifier() - unregister IPv6 change notifier
@@ -4839,6 +4807,11 @@ static void hdd_wlan_exit(hdd_context_t *hdd_ctx)
 		    (qdf_mc_timer_destroy(&hdd_ctx->skip_acs_scan_timer))) {
 		hdd_err("Cannot deallocate ACS Skip timer");
 	}
+	qdf_spin_lock(&hdd_ctx->acs_skip_lock);
+	qdf_mem_free(hdd_ctx->last_acs_channel_list);
+	hdd_ctx->last_acs_channel_list = NULL;
+	hdd_ctx->num_of_channels = 0;
+	qdf_spin_unlock(&hdd_ctx->acs_skip_lock);
 #endif
 
 	mutex_lock(&hdd_ctx->iface_change_lock);
@@ -4871,6 +4844,7 @@ static void hdd_wlan_exit(hdd_context_t *hdd_ctx)
 		 * completed, all scans will be cancelled
 		 */
 		hdd_abort_mac_scan_all_adapters(hdd_ctx);
+		hdd_abort_sched_scan_all_adapters(hdd_ctx);
 		hdd_stop_all_adapters(hdd_ctx);
 	}
 
@@ -4945,12 +4919,27 @@ void __hdd_wlan_exit(void)
 }
 
 #ifdef FEATURE_WLAN_AP_AP_ACS_OPTIMIZE
+/**
+ * hdd_skip_acs_scan_timer_handler() - skip ACS scan timer timeout handler
+ * @data: pointer to hdd_context_t
+ *
+ * This function will reset acs_scan_status to eSAP_DO_NEW_ACS_SCAN.
+ * Then new ACS request will do a fresh scan without reusing the cached
+ * scan information.
+ *
+ * Return: void
+ */
 void hdd_skip_acs_scan_timer_handler(void *data)
 {
 	hdd_context_t *hdd_ctx = (hdd_context_t *) data;
 
 	hdd_notice("ACS Scan result expired. Reset ACS scan skip");
 	hdd_ctx->skip_acs_scan_status = eSAP_DO_NEW_ACS_SCAN;
+	qdf_spin_lock(&hdd_ctx->acs_skip_lock);
+	qdf_mem_free(hdd_ctx->last_acs_channel_list);
+	hdd_ctx->last_acs_channel_list = NULL;
+	hdd_ctx->num_of_channels = 0;
+	qdf_spin_unlock(&hdd_ctx->acs_skip_lock);
 
 	if (!hdd_ctx->hHal)
 		return;
@@ -5213,11 +5202,13 @@ QDF_STATUS hdd_set_sme_chan_list(hdd_context_t *hdd_ctx)
  */
 bool hdd_is_5g_supported(hdd_context_t *hdd_ctx)
 {
-	/*
-	 * If wcnss_wlan_iris_xo_mode() returns WCNSS_XO_48MHZ(1);
-	 * then hardware support 5Ghz.
-	 */
-	return true;
+	if (!hdd_ctx || !hdd_ctx->config)
+		return true;
+
+	if (hdd_ctx->config->nBandCapability != eCSR_BAND_24)
+		return true;
+	else
+		return false;
 }
 
 static int hdd_wiphy_init(hdd_context_t *hdd_ctx)
@@ -6973,6 +6964,7 @@ static int hdd_update_cds_config(hdd_context_t *hdd_ctx)
 	cds_cfg->sub_20_channel_width = WLAN_SUB_20_CH_WIDTH_NONE;
 	cds_cfg->flow_steering_enabled = hdd_ctx->config->flow_steering_enable;
 	cds_cfg->self_recovery_enabled = hdd_ctx->config->enableSelfRecovery;
+	cds_cfg->fw_timeout_crash = hdd_ctx->config->fw_timeout_crash;
 
 	hdd_ra_populate_cds_config(cds_cfg, hdd_ctx);
 	hdd_txrx_populate_cds_config(cds_cfg, hdd_ctx);
@@ -8098,6 +8090,7 @@ int hdd_wlan_startup(struct device *dev)
 				   (void *)hdd_ctx);
 	if (!QDF_IS_STATUS_SUCCESS(status))
 		hdd_err("Failed to init ACS Skip timer");
+	qdf_spinlock_create(&hdd_ctx->acs_skip_lock);
 #endif
 
 	hdd_bus_bandwidth_init(hdd_ctx);
@@ -9230,7 +9223,7 @@ static ssize_t wlan_boot_cb(struct kobject *kobj,
  * This is creates the syfs entry boot_wlan. Which shall be invoked
  * when the filesystem is ready.
  *
- * Return: None
+ * Return: 0 for success, errno on failure
  */
 static int wlan_init_sysfs(void)
 {
@@ -9335,7 +9328,7 @@ static int __init hdd_module_init(void)
 	int ret = -EINVAL;
 
 	ret = wlan_init_sysfs();
-	if (!ret)
+	if (ret)
 		pr_err("Failed to create sysfs entry for loading wlan");
 
 	return ret;

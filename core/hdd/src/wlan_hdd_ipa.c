@@ -362,7 +362,7 @@ static uint8_t vdev_to_iface[CSR_ROAM_SESSION_MAX];
  * @rx_destructor_call: IPA Rx packet destructor count
  */
 struct uc_rt_debug_info {
-	unsigned long time;
+	uint64_t time;
 	uint64_t ipa_excep_count;
 	uint64_t rx_drop_count;
 	uint64_t net_sent_count;
@@ -726,7 +726,7 @@ static void hdd_ipa_uc_rt_debug_host_fill(void *ctext)
 	dump_info = &hdd_ipa->rt_bug_buffer[
 		hdd_ipa->rt_buf_fill_index % HDD_IPA_UC_RT_DEBUG_BUF_COUNT];
 
-	dump_info->time = qdf_mc_timer_get_system_time();
+	dump_info->time = (uint64_t)qdf_mc_timer_get_system_time();
 	dump_info->ipa_excep_count = hdd_ipa->stats.num_rx_excep;
 	dump_info->rx_drop_count = hdd_ipa->ipa_rx_internel_drop_count;
 	dump_info->net_sent_count = hdd_ipa->ipa_rx_net_send_count;
@@ -779,7 +779,7 @@ void hdd_ipa_uc_rt_debug_host_dump(hdd_context_t *hdd_ctx)
 			HDD_IPA_UC_RT_DEBUG_BUF_COUNT;
 		dump_info = &hdd_ipa->rt_bug_buffer[dump_index];
 		HDD_IPA_LOG(QDF_TRACE_LEVEL_ERROR,
-			"%12lu:%10llu:%10llu:%10llu:%10llu:%10llu:%10llu:%10llu\n",
+			"%12llu:%10llu:%10llu:%10llu:%10llu:%10llu:%10llu:%10llu\n",
 			dump_info->time, dump_info->ipa_excep_count,
 			dump_info->rx_drop_count, dump_info->net_sent_count,
 			dump_info->tx_mcbc_count, dump_info->tx_fwd_count,
@@ -1603,8 +1603,7 @@ static void hdd_ipa_uc_offload_enable_disable(hdd_adapter_t *adapter,
 	if (!iface_context || (enable == iface_context->offload_enabled)) {
 		/* IPA offload status is already set as desired */
 		HDD_IPA_LOG(QDF_TRACE_LEVEL_ERROR,
-			    "IPA offload status is already set: \
-			    (offload_type=%d, vdev_id=%d, enable=%d)",
+			    "IPA offload status is already set: (offload_type=%d, vdev_id=%d, enable=%d)",
 			    offload_type, adapter->sessionId, enable);
 		return;
 	}
@@ -1625,11 +1624,11 @@ static void hdd_ipa_uc_offload_enable_disable(hdd_adapter_t *adapter,
 		sme_ipa_offload_enable_disable(WLAN_HDD_GET_HAL_CTX(adapter),
 			adapter->sessionId, &ipa_offload_enable_disable)) {
 		HDD_IPA_LOG(QDF_TRACE_LEVEL_ERROR,
-			"%s: Failure to enable IPA offload \
-			(offload_type=%d, vdev_id=%d, enable=%d)", __func__,
-			ipa_offload_enable_disable.offload_type,
-			ipa_offload_enable_disable.vdev_id,
-			ipa_offload_enable_disable.enable);
+			    "%s: Failure to enable IPA offload (offload_type=%d, vdev_id=%d, enable=%d)",
+			    __func__,
+			    ipa_offload_enable_disable.offload_type,
+			    ipa_offload_enable_disable.vdev_id,
+			    ipa_offload_enable_disable.enable);
 	} else {
 		/* Update the IPA offload status */
 		iface_context->offload_enabled =
@@ -4044,20 +4043,23 @@ static int __hdd_ipa_wlan_evt(hdd_adapter_t *adapter, uint8_t sta_id,
 			return 0;
 		}
 		hdd_ipa->sap_num_connected_sta--;
-		/* Disable IPA UC TX PIPE when last STA disconnected */
-		if (!hdd_ipa->sap_num_connected_sta
-			&& (false == hdd_ipa->resource_unloading)
-			&& (HDD_IPA_UC_NUM_WDI_PIPE ==
-				hdd_ipa->activated_fw_pipe))
-			hdd_ipa_uc_handle_last_discon(hdd_ipa);
 
-		if (hdd_ipa_uc_sta_is_enabled(hdd_ipa->hdd_ctx) &&
-		    hdd_ipa->sta_connected) {
+		/* Disable IPA UC TX PIPE when last STA disconnected */
+		if (!hdd_ipa->sap_num_connected_sta) {
+			if ((false == hdd_ipa->resource_unloading)
+			    && (HDD_IPA_UC_NUM_WDI_PIPE ==
+				hdd_ipa->activated_fw_pipe)) {
+				hdd_ipa_uc_handle_last_discon(hdd_ipa);
+			}
+
 			qdf_mutex_release(&hdd_ipa->event_lock);
-			hdd_ipa_uc_offload_enable_disable(
-				hdd_get_adapter(hdd_ipa->hdd_ctx,
-						QDF_STA_MODE),
-						SIR_STA_RX_DATA_OFFLOAD, 0);
+
+			if (hdd_ipa_uc_sta_is_enabled(hdd_ipa->hdd_ctx) &&
+			    hdd_ipa->sta_connected)
+				hdd_ipa_uc_offload_enable_disable(
+					hdd_get_adapter(hdd_ipa->hdd_ctx,
+							QDF_STA_MODE),
+					SIR_STA_RX_DATA_OFFLOAD, 0);
 		} else {
 			qdf_mutex_release(&hdd_ipa->event_lock);
 		}
@@ -4231,6 +4233,8 @@ QDF_STATUS hdd_ipa_init(hdd_context_t *hdd_ctx)
 		iface_context->adapter = NULL;
 		iface_context->offload_enabled = 0;
 		qdf_spinlock_create(&iface_context->interface_lock);
+	}
+	for (i = 0; i < CSR_ROAM_SESSION_MAX; i++) {
 		vdev_to_iface[i] = CSR_ROAM_SESSION_MAX;
 	}
 

@@ -233,10 +233,6 @@ QDF_STATUS wma_get_buf_start_scan_cmd(tp_wma_handle wma_handle,
 	} else
 		cmd->dwell_time_passive = scan_req->maxChannelTime;
 
-	WMA_LOGI("Scan Type %x, Active dwell time %u, Passive dwell time %u",
-		 scan_req->scanType, cmd->dwell_time_active,
-		 cmd->dwell_time_passive);
-
 	/* Ensure correct number of probes are sent on active channel */
 	cmd->repeat_probe_time =
 		cmd->dwell_time_active / WMA_SCAN_NPROBES_DEFAULT;
@@ -465,8 +461,19 @@ QDF_STATUS wma_get_buf_start_scan_cmd(tp_wma_handle wma_handle,
 				QDF_MIN(SSID_num,
 					WMA_DWELL_TIME_PROBE_TIME_MAP_SIZE
 					- 1)].probe_time;
+			cmd->n_probes = (cmd->repeat_probe_time > 0) ?
+				cmd->dwell_time_active/
+				cmd->repeat_probe_time : 0;
 		}
 	}
+	WMA_LOGI("Scan Type 0x%x, Active dwell time %u, Passive dwell time %u",
+		scan_req->scanType, cmd->dwell_time_active,
+		cmd->dwell_time_passive);
+	WMA_LOGI("Scan repeat_probe_time %u n_probes %u num_ssids %u num_bssid %u",
+		cmd->repeat_probe_time,
+		cmd->n_probes,
+		cmd->num_ssids,
+		cmd->num_bssid);
 
 	qdf_mem_copy(cmd->mac_add_bytes, scan_req->bssId.bytes, QDF_MAC_ADDR_SIZE);
 	cmd->ie_len = scan_req->uIEFieldLen;
@@ -675,14 +682,15 @@ QDF_STATUS wma_update_channel_list(WMA_HANDLE handle,
 		wma_handle->saved_chan.channel_list[i] =
 				chan_list->chanParam[i].chanId;
 
-		WMA_LOGD("chan[%d] = freq:%u chan:%d", i, tchan_info->mhz,
-			chan_list->chanParam[i].chanId);
-		if (chan_list->chanParam[i].dfsSet) {
-			WMI_SET_CHANNEL_FLAG(tchan_info, WMI_CHAN_FLAG_PASSIVE);
-			WMA_LOGI("chan[%d] DFS[%d]\n",
-				 chan_list->chanParam[i].chanId,
-				 chan_list->chanParam[i].dfsSet);
-		}
+		WMA_LOGD("chan[%d] = freq:%u chan:%d DFS:%d tx power:%d",
+			 i, tchan_info->mhz,
+			 chan_list->chanParam[i].chanId,
+			 chan_list->chanParam[i].dfsSet,
+			 chan_list->chanParam[i].pwr);
+
+		if (chan_list->chanParam[i].dfsSet)
+			WMI_SET_CHANNEL_FLAG(tchan_info,
+					     WMI_CHAN_FLAG_PASSIVE);
 
 		if (tchan_info->mhz < WMA_2_4_GHZ_MAX_FREQ) {
 			WMI_SET_CHANNEL_MODE(tchan_info, MODE_11G);
@@ -712,11 +720,6 @@ QDF_STATUS wma_update_channel_list(WMA_HANDLE handle,
 
 		WMI_SET_CHANNEL_REG_POWER(tchan_info,
 					  chan_list->chanParam[i].pwr);
-		WMA_LOGI("Channel TX power[%d] = %u: %d", i, tchan_info->mhz,
-			 chan_list->chanParam[i].pwr);
-		/*TODO: Set WMI_SET_CHANNEL_MIN_POWER */
-		/*TODO: Set WMI_SET_CHANNEL_ANTENNA_MAX */
-		/*TODO: WMI_SET_CHANNEL_REG_CLASSID */
 		tchan_info++;
 	}
 
@@ -1547,8 +1550,8 @@ QDF_STATUS wma_roam_scan_offload_ap_profile(tp_wma_handle wma_handle,
  * Return: Return success upon succesfully passing the
  *         parameters to the firmware, otherwise failure.
  */
-QDF_STATUS wma_roam_scan_filter(tp_wma_handle wma_handle,
-	tSirRoamOffloadScanReq *roam_req)
+static QDF_STATUS wma_roam_scan_filter(tp_wma_handle wma_handle,
+				       tSirRoamOffloadScanReq *roam_req)
 {
 	int i;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
@@ -1842,10 +1845,10 @@ QDF_STATUS wma_process_roaming_config(tp_wma_handle wma_handle,
 			wma_roam_scan_fill_scan_params(wma_handle, pMac,
 						       NULL, &scan_params);
 			qdf_status = wma_roam_scan_offload_mode(wma_handle,
-								&scan_params,
-								NULL,
-								WMI_ROAM_SCAN_MODE_NONE,
-								roam_req->sessionId);
+						&scan_params, NULL,
+						WMI_ROAM_SCAN_MODE_NONE |
+						WMI_ROAM_SCAN_MODE_ROAMOFFLOAD,
+						roam_req->sessionId);
 		}
 		/*
 		 * If the STOP command is due to a disconnect, then
@@ -2089,9 +2092,9 @@ void wma_process_roam_synch_fail(WMA_HANDLE handle,
  *
  * Return: None
  */
-void wma_fill_roam_synch_buffer(tp_wma_handle wma,
-		roam_offload_synch_ind *roam_synch_ind_ptr,
-		WMI_ROAM_SYNCH_EVENTID_param_tlvs *param_buf)
+static void wma_fill_roam_synch_buffer(tp_wma_handle wma,
+				roam_offload_synch_ind *roam_synch_ind_ptr,
+				WMI_ROAM_SYNCH_EVENTID_param_tlvs *param_buf)
 {
 	wmi_roam_synch_event_fixed_param *synch_event;
 	uint8_t *bcn_probersp_ptr;
@@ -2181,8 +2184,8 @@ void wma_fill_roam_synch_buffer(tp_wma_handle wma,
  *
  * Return: None
  */
-void wma_roam_update_vdev(tp_wma_handle wma,
-	roam_offload_synch_ind *roam_synch_ind_ptr)
+static void wma_roam_update_vdev(tp_wma_handle wma,
+				 roam_offload_synch_ind *roam_synch_ind_ptr)
 {
 	tDeleteBssParams *del_bss_params;
 	tDeleteStaParams *del_sta_params;
@@ -2701,7 +2704,8 @@ void wma_process_roam_synch_complete(WMA_HANDLE handle, uint8_t vdev_id)
  *
  * Return: 0 for success, otherwise appropriate error code
  */
-QDF_STATUS wma_switch_channel(tp_wma_handle wma, struct wma_vdev_start_req *req)
+static QDF_STATUS wma_switch_channel(tp_wma_handle wma,
+				     struct wma_vdev_start_req *req)
 {
 
 	wmi_buf_t buf;
