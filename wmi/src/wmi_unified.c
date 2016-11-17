@@ -1639,6 +1639,10 @@ static uint8_t *wmi_id_to_name(uint32_t wmi_command)
 		CASE_RETURN_STRING(WMI_PDEV_SET_STATS_THRESHOLD_CMDID);
 		CASE_RETURN_STRING(WMI_REQUEST_WLAN_STATS_CMDID);
 		CASE_RETURN_STRING(WMI_VDEV_ENCRYPT_DECRYPT_DATA_REQ_CMDID);
+		CASE_RETURN_STRING(WMI_PDEV_DFS_PHYERR_OFFLOAD_ENABLE_CMDID);
+		CASE_RETURN_STRING(WMI_PDEV_DFS_PHYERR_OFFLOAD_DISABLE_CMDID);
+		CASE_RETURN_STRING(WMI_VDEV_ADFS_CH_CFG_CMDID);
+		CASE_RETURN_STRING(WMI_VDEV_ADFS_OCAC_ABORT_CMDID);
 	}
 
 	return "Invalid WMI cmd";
@@ -1774,7 +1778,8 @@ QDF_STATUS wmi_unified_cmd_send(wmi_unified_t wmi_handle, wmi_buf_t buf,
 		htc_dump_counter_info(wmi_handle->htc_handle);
 		qdf_atomic_dec(&wmi_handle->pending_cmds);
 		QDF_TRACE(QDF_MODULE_ID_WMI, QDF_TRACE_LEVEL_ERROR,
-		    "%s: MAX 1024 WMI Pending cmds reached.", __func__);
+			"%s: MAX %d WMI Pending cmds reached.", __func__,
+			WMI_MAX_CMDS);
 		QDF_BUG(0);
 		return QDF_STATUS_E_BUSY;
 	}
