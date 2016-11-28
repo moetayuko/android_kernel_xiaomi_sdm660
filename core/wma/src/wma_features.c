@@ -3083,6 +3083,51 @@ static uint32_t wma_wow_get_wakelock_duration(int wake_reason)
 }
 
 /**
+ * wma_wow_ap_lost_helper() - helper function to handle WOW_REASON_AP_ASSOC_LOST
+ * reason code and retrieve RSSI from the event.
+ * @wma: Pointer to wma handle
+ * @param: WMI_WOW_WAKEUP_HOST_EVENTID_param_tlvs buffer pointer
+ *
+ * Return: none
+ */
+static void wma_wow_ap_lost_helper(tp_wma_handle wma, void *param)
+{
+	WMI_WOW_WAKEUP_HOST_EVENTID_param_tlvs *param_buf;
+	WOW_EVENT_INFO_fixed_param *wake_info;
+	WMI_ROAM_EVENTID_param_tlvs event_param;
+	wmi_roam_event_fixed_param *roam_event;
+	u_int32_t wow_buf_pkt_len = 0;
+
+	param_buf = (WMI_WOW_WAKEUP_HOST_EVENTID_param_tlvs *) param;
+	wake_info = param_buf->fixed_param;
+	WMA_LOGA("%s: Beacon miss indication on vdev %d",
+		__func__, wake_info->vdev_id);
+
+	if (NULL == param_buf->wow_packet_buffer) {
+		WMA_LOGE("%s: invalid wow packet buffer", __func__);
+		goto exit_handler;
+	}
+
+	qdf_mem_copy((u_int8_t *) &wow_buf_pkt_len,
+		param_buf->wow_packet_buffer, 4);
+	WMA_LOGD("wow_packet_buffer dump");
+	qdf_trace_hex_dump(QDF_MODULE_ID_WMA, QDF_TRACE_LEVEL_DEBUG,
+		param_buf->wow_packet_buffer, wow_buf_pkt_len);
+	if (wow_buf_pkt_len >= sizeof(event_param)) {
+		roam_event = (wmi_roam_event_fixed_param *)
+			(param_buf->wow_packet_buffer + 4);
+		wma_beacon_miss_handler(wma, wake_info->vdev_id,
+			roam_event->rssi);
+		return;
+	}
+
+exit_handler:
+	/* in the case that no RSSI is available from the event */
+	WMA_LOGE("%s: rssi is not available from wow_packet_buffer", __func__);
+	wma_beacon_miss_handler(wma, wake_info->vdev_id, 0);
+}
+
+/**
  * wma_wow_wakeup_host_event() - wakeup host event handler
  * @handle: wma handle
  * @event: event data
@@ -3184,9 +3229,7 @@ int wma_wow_wakeup_host_event(void *handle, uint8_t *event,
 
 	case WOW_REASON_AP_ASSOC_LOST:
 		wake_lock_duration = WMA_BMISS_EVENT_WAKE_LOCK_DURATION;
-		WMA_LOGA("Beacon miss indication on vdev %x",
-			 wake_info->vdev_id);
-		wma_beacon_miss_handler(wma, wake_info->vdev_id);
+		wma_wow_ap_lost_helper(wma, param_buf);
 		break;
 #ifdef FEATURE_WLAN_AUTO_SHUTDOWN
 	case WOW_REASON_HOST_AUTO_SHUTDOWN:
@@ -5505,7 +5548,7 @@ QDF_STATUS wma_process_get_peer_info_req
 
 	WMA_LOGE("IBSS get peer info cmd sent len: %d, vdev %d"
 		 " command id: %d, status: %d", len,
-		 p_get_peer_info_cmd->vdev_id, WMI_PEER_INFO_REQ_CMDID, ret);
+		 vdev_id, WMI_PEER_INFO_REQ_CMDID, ret);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -5595,8 +5638,7 @@ QDF_STATUS wma_process_rmc_enable_ind(tp_wma_handle wma)
 				   WMI_RMC_SET_MODE_CMDID);
 
 	WMA_LOGE("Enable RMC cmd sent len: %d, vdev %d" " command id: %d,"
-		 " status: %d", len, p_rmc_enable_cmd->vdev_id,
-		 WMI_RMC_SET_MODE_CMDID, ret);
+		 " status: %d", len, vdev_id, WMI_RMC_SET_MODE_CMDID, ret);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -5646,8 +5688,7 @@ QDF_STATUS wma_process_rmc_disable_ind(tp_wma_handle wma)
 				   WMI_RMC_SET_MODE_CMDID);
 
 	WMA_LOGE("Disable RMC cmd sent len: %d, vdev %d" " command id: %d,"
-		 " status: %d", len, p_rmc_disable_cmd->vdev_id,
-		 WMI_RMC_SET_MODE_CMDID, ret);
+		 " status: %d", len, vdev_id, WMI_RMC_SET_MODE_CMDID, ret);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -5663,7 +5704,7 @@ QDF_STATUS wma_process_rmc_action_period_ind(tp_wma_handle wma)
 	int ret;
 	uint8_t *p;
 	uint16_t len;
-	uint32_t val;
+	uint32_t periodicity_msec;
 	wmi_buf_t buf;
 	int32_t vdev_id;
 	wmi_rmc_set_action_period_cmd_fixed_param *p_rmc_cmd;
@@ -5697,21 +5738,21 @@ QDF_STATUS wma_process_rmc_action_period_ind(tp_wma_handle wma)
 		       WMITLV_GET_STRUCT_TLVLEN
 			       (wmi_rmc_set_action_period_cmd_fixed_param));
 
-	if (wlan_cfg_get_int(mac, WNI_CFG_RMC_ACTION_PERIOD_FREQUENCY, &val)
-	    != eSIR_SUCCESS) {
+	if (wlan_cfg_get_int(mac, WNI_CFG_RMC_ACTION_PERIOD_FREQUENCY,
+			     &periodicity_msec) != eSIR_SUCCESS) {
 		WMA_LOGE("Failed to get value for RMC action period using default");
-		val = WNI_CFG_RMC_ACTION_PERIOD_FREQUENCY_STADEF;
+		periodicity_msec = WNI_CFG_RMC_ACTION_PERIOD_FREQUENCY_STADEF;
 	}
 
 	p_rmc_cmd->vdev_id = vdev_id;
-	p_rmc_cmd->periodicity_msec = val;
+	p_rmc_cmd->periodicity_msec = periodicity_msec;
 
 	ret = wmi_unified_cmd_send(wma->wmi_handle, buf, len,
 				   WMI_RMC_SET_ACTION_PERIOD_CMDID);
 
 	WMA_LOGE("RMC action period %d cmd sent len: %d, vdev %d"
-		 " command id: %d, status: %d", p_rmc_cmd->periodicity_msec,
-		 len, p_rmc_cmd->vdev_id, WMI_RMC_SET_ACTION_PERIOD_CMDID, ret);
+		 " command id: %d, status: %d", periodicity_msec,
+		 len, vdev_id, WMI_RMC_SET_ACTION_PERIOD_CMDID, ret);
 
 	return QDF_STATUS_SUCCESS;
 }

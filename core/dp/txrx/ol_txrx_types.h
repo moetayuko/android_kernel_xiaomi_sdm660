@@ -948,8 +948,8 @@ struct ol_txrx_pdev_t {
 	ol_tx_pause_callback_fp pause_cb;
 
 	struct {
-		void *lro_data;
 		void (*lro_flush_cb)(void *);
+		qdf_atomic_t lro_dev_cnt;
 	} lro_info;
 	struct ol_txrx_peer_t *self_peer;
 };
@@ -1066,6 +1066,9 @@ struct ol_txrx_vdev_t {
 	/* Information about the schedules in the schedule */
 	struct ol_txrx_ocb_chan_info *ocb_channel_info;
 	uint32_t ocb_channel_count;
+	/* Default OCB TX parameter */
+	struct ocb_tx_ctrl_hdr_t *ocb_def_tx_param;
+
 
 #ifdef QCA_LL_TX_FLOW_CONTROL_V2
 	struct ol_tx_flow_pool_t *pool;

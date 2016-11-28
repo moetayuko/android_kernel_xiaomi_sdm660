@@ -1324,6 +1324,22 @@ static void wma_hidden_ssid_vdev_restart_on_vdev_stop(tp_wma_handle wma_handle,
 }
 
 /**
+ * wma_cleanup_target_req_param() - free param memory of target request
+ * @tgt_req: target request params
+ *
+ * Return: none
+ */
+static void wma_cleanup_target_req_param(struct wma_target_req *tgt_req)
+{
+	if (tgt_req->msg_type == WMA_CHNL_SWITCH_REQ ||
+	   tgt_req->msg_type == WMA_DELETE_BSS_REQ ||
+	   tgt_req->msg_type == WMA_ADD_BSS_REQ) {
+		qdf_mem_free(tgt_req->user_data);
+		tgt_req->user_data = NULL;
+	}
+}
+
+/**
  * wma_vdev_stop_resp_handler() - vdev stop response handler
  * @handle: wma handle
  * @cmd_param_info: event buffer
@@ -1393,6 +1409,7 @@ int wma_vdev_stop_resp_handler(void *handle, uint8_t *cmd_param_info,
 	if (!pdev) {
 		WMA_LOGE("%s: pdev is NULL", __func__);
 		status = -EINVAL;
+		wma_cleanup_target_req_param(req_msg);
 		qdf_mc_timer_stop(&req_msg->event_timeout);
 		goto free_req_msg;
 	}
@@ -1405,6 +1422,7 @@ int wma_vdev_stop_resp_handler(void *handle, uint8_t *cmd_param_info,
 		if (resp_event->vdev_id > wma->max_bssid) {
 			WMA_LOGE("%s: Invalid vdev_id %d", __func__,
 				 resp_event->vdev_id);
+			wma_cleanup_target_req_param(req_msg);
 			status = -EINVAL;
 			goto free_req_msg;
 		}
@@ -1413,6 +1431,7 @@ int wma_vdev_stop_resp_handler(void *handle, uint8_t *cmd_param_info,
 		if (iface->handle == NULL) {
 			WMA_LOGE("%s vdev id %d is already deleted",
 				 __func__, resp_event->vdev_id);
+			wma_cleanup_target_req_param(req_msg);
 			status = -EINVAL;
 			goto free_req_msg;
 		}
@@ -1482,7 +1501,7 @@ int wma_vdev_stop_resp_handler(void *handle, uint8_t *cmd_param_info,
 		 * to send response to UMAC
 		 */
 		if (params->status == QDF_STATUS_FW_MSG_TIMEDOUT) {
-			qdf_mem_free(params);
+			wma_cleanup_target_req_param(req_msg);
 			WMA_LOGE("%s: DEL BSS from ADD BSS timeout do not send "
 				 "resp to UMAC (vdev id %x)",
 				 __func__, resp_event->vdev_id);
@@ -1492,13 +1511,29 @@ int wma_vdev_stop_resp_handler(void *handle, uint8_t *cmd_param_info,
 				     0);
 		}
 
-		if ((iface->del_staself_req != NULL) &&
-			(iface->type == WMI_VDEV_TYPE_AP) &&
-			(iface->sub_type == WMI_UNIFIED_VDEV_SUBTYPE_P2P_GO)) {
+		if (iface->del_staself_req != NULL) {
 			WMA_LOGA("scheduling defered deletion (vdev id %x)",
 				 resp_event->vdev_id);
 			wma_vdev_detach(wma, iface->del_staself_req, 1);
 		}
+	} else if (req_msg->msg_type == WMA_SET_LINK_STATE) {
+		tpLinkStateParams params =
+			(tpLinkStateParams) req_msg->user_data;
+
+		peer = ol_txrx_find_peer_by_addr(pdev, params->bssid, &peer_id);
+		if (peer) {
+			WMA_LOGP(FL("Deleting peer %pM vdev id %d"),
+				 params->bssid, req_msg->vdev_id);
+			wma_remove_peer(wma, params->bssid, req_msg->vdev_id,
+				peer, false);
+		}
+		if (wmi_unified_vdev_down_send(wma->wmi_handle,
+					req_msg->vdev_id) !=
+					QDF_STATUS_SUCCESS) {
+			WMA_LOGE("Failed to send vdev down cmd: vdev %d",
+				req_msg->vdev_id);
+		}
+		wma_send_msg(wma, WMA_SET_LINK_STATE_RSP, (void *)params, 0);
 	}
 free_req_msg:
 	qdf_mc_timer_destroy(&req_msg->event_timeout);
@@ -2413,6 +2448,7 @@ void wma_vdev_resp_timer(void *data)
 	tpAniSirGlobal mac_ctx = cds_get_context(QDF_MODULE_ID_PE);
 	if (NULL == mac_ctx) {
 		WMA_LOGE("%s: Failed to get mac_ctx", __func__);
+		wma_cleanup_target_req_param(tgt_req);
 		goto free_tgt_req;
 	}
 #endif /* FEATURE_AP_MCC_CH_AVOIDANCE */
@@ -2421,6 +2457,7 @@ void wma_vdev_resp_timer(void *data)
 
 	if (NULL == wma) {
 		WMA_LOGE("%s: Failed to get wma", __func__);
+		wma_cleanup_target_req_param(tgt_req);
 		goto free_tgt_req;
 	}
 
@@ -2428,6 +2465,7 @@ void wma_vdev_resp_timer(void *data)
 
 	if (NULL == pdev) {
 		WMA_LOGE("%s: Failed to get pdev", __func__);
+		wma_cleanup_target_req_param(tgt_req);
 		qdf_mc_timer_stop(&tgt_req->event_timeout);
 		goto free_tgt_req;
 	}
@@ -2439,6 +2477,7 @@ void wma_vdev_resp_timer(void *data)
 	if (!msg) {
 		WMA_LOGE("%s: Failed to lookup request message - %d",
 			 __func__, tgt_req->msg_type);
+		wma_cleanup_target_req_param(tgt_req);
 		goto free_tgt_req;
 	}
 
@@ -2467,6 +2506,7 @@ void wma_vdev_resp_timer(void *data)
 		if (tgt_req->vdev_id > wma->max_bssid) {
 			WMA_LOGE("%s: Invalid vdev_id %d", __func__,
 				 tgt_req->vdev_id);
+			wma_cleanup_target_req_param(tgt_req);
 			qdf_mc_timer_stop(&tgt_req->event_timeout);
 			goto free_tgt_req;
 		}
@@ -2475,6 +2515,7 @@ void wma_vdev_resp_timer(void *data)
 		if (iface->handle == NULL) {
 			WMA_LOGE("%s vdev id %d is already deleted",
 				 __func__, tgt_req->vdev_id);
+			wma_cleanup_target_req_param(tgt_req);
 			qdf_mc_timer_stop(&tgt_req->event_timeout);
 			goto free_tgt_req;
 		}
@@ -2596,6 +2637,27 @@ void wma_vdev_resp_timer(void *data)
 	} else if (tgt_req->msg_type == WMA_HIDDEN_SSID_VDEV_RESTART) {
 		WMA_LOGE("Hidden ssid vdev restart Timed Out; vdev_id: %d, type = %d",
 				tgt_req->vdev_id, tgt_req->type);
+	} else if (tgt_req->msg_type == WMA_SET_LINK_STATE) {
+		tpLinkStateParams params =
+			(tpLinkStateParams) tgt_req->user_data;
+
+		peer = ol_txrx_find_peer_by_addr(pdev, params->bssid, &peer_id);
+		if (peer) {
+			WMA_LOGP(FL("Deleting peer %pM vdev id %d"),
+				 params->bssid, tgt_req->vdev_id);
+			wma_remove_peer(wma, params->bssid, tgt_req->vdev_id,
+					peer, false);
+		}
+		if (wmi_unified_vdev_down_send(wma->wmi_handle,
+					tgt_req->vdev_id) !=
+					QDF_STATUS_SUCCESS) {
+			WMA_LOGE("Failed to send vdev down cmd: vdev %d",
+				tgt_req->vdev_id);
+		}
+		params->status = QDF_STATUS_E_TIMEOUT;
+		WMA_LOGA("%s: WMA_SET_LINK_STATE timedout vdev %d", __func__,
+			tgt_req->vdev_id);
+		wma_send_msg(wma, WMA_SET_LINK_STATE_RSP, (void *)params, 0);
 	}
 free_tgt_req:
 	qdf_mc_timer_destroy(&tgt_req->event_timeout);

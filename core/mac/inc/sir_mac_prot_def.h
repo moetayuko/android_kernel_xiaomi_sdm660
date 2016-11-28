@@ -422,7 +422,6 @@
 
 /* / Maximum length of each IE */
 #define SIR_MAC_RSN_IE_MAX_LENGTH   255
-#define SIR_MAC_WPA_IE_MAX_LENGTH   255
 /* / Minimum length of each IE */
 #define SIR_MAC_RSN_IE_MIN_LENGTH   2
 #define SIR_MAC_WPA_IE_MIN_LENGTH   6
@@ -454,10 +453,6 @@
 
 #define SIR_MAC_CISCO_OUI "\x00\x40\x96"
 #define SIR_MAC_CISCO_OUI_SIZE 3
-
-/* WFA vendor specific TPC OUI */
-#define SIR_MAC_WFA_TPC_OUI             "\x00\x50\xF2\x08\x00"
-#define SIR_MAC_WFA_TPC_OUI_SIZE        5
 
 /* min size of wme oui header: oui(3) + type + subtype + version */
 #define SIR_MAC_OUI_WME_HDR_MIN       6

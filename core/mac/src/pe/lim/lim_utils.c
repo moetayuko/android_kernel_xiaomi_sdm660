@@ -663,12 +663,6 @@ void lim_cleanup_mlm(tpAniSirGlobal mac_ctx)
 				n++)
 			tx_timer_delete(&pAuthNode[n]->timer);
 
-		/* Deactivate and delete Hash Miss throttle timer */
-		tx_timer_deactivate(&lim_timer->
-				gLimSendDisassocFrameThresholdTimer);
-		tx_timer_delete(&lim_timer->
-				gLimSendDisassocFrameThresholdTimer);
-
 		tx_timer_deactivate(&lim_timer->gLimUpdateOlbcCacheTimer);
 		tx_timer_delete(&lim_timer->gLimUpdateOlbcCacheTimer);
 		tx_timer_deactivate(&lim_timer->gLimPreAuthClnupTimer);
@@ -6582,17 +6576,8 @@ QDF_STATUS lim_send_ies_per_band(tpAniSirGlobal mac_ctx,
 
 	vht_caps[0] = DOT11F_EID_VHTCAPS;
 	vht_caps[1] = DOT11F_IE_VHTCAPS_MAX_LEN;
-	/* Get LDPC and over write for 2G */
 	lim_set_vht_caps(mac_ctx, session, vht_caps,
 			 DOT11F_IE_VHTCAPS_MIN_LEN + 2);
-	p_vht_cap->ldpcCodingCap = lim_get_rx_ldpc(mac_ctx, CHAN_ENUM_6);
-	/* Self VHT 80/160/80+80 channel width for 2G is 0 */
-	p_vht_cap->supportedChannelWidthSet = 0;
-	p_vht_cap->shortGI80MHz = 0;
-	p_vht_cap->shortGI160and80plus80MHz = 0;
-	lim_send_ie(mac_ctx, vdev_id, DOT11F_EID_VHTCAPS,
-			CDS_BAND_2GHZ, &vht_caps[2], DOT11F_IE_VHTCAPS_MIN_LEN);
-
 	/*
 	 * Get LDPC and over write for 5G - using channel 64 because it
 	 * is available in all reg domains.
@@ -6601,6 +6586,15 @@ QDF_STATUS lim_send_ies_per_band(tpAniSirGlobal mac_ctx,
 	/* Self VHT channel width for 5G is already negotiated with FW */
 	lim_send_ie(mac_ctx, vdev_id, DOT11F_EID_VHTCAPS,
 			CDS_BAND_5GHZ, &vht_caps[2], DOT11F_IE_VHTCAPS_MIN_LEN);
+
+	/* Get LDPC and over write for 2G */
+	p_vht_cap->ldpcCodingCap = lim_get_rx_ldpc(mac_ctx, CHAN_ENUM_6);
+	/* Self VHT 80/160/80+80 channel width for 2G is 0 */
+	p_vht_cap->supportedChannelWidthSet = 0;
+	p_vht_cap->shortGI80MHz = 0;
+	p_vht_cap->shortGI160and80plus80MHz = 0;
+	lim_send_ie(mac_ctx, vdev_id, DOT11F_EID_VHTCAPS,
+			CDS_BAND_2GHZ, &vht_caps[2], DOT11F_IE_VHTCAPS_MIN_LEN);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -7217,4 +7211,77 @@ void lim_send_set_dtim_period(tpAniSirGlobal mac_ctx, uint8_t dtim_period,
 		lim_log(mac_ctx, LOGE, FL("wma_post_ctrl_msg() failed"));
 		qdf_mem_free(dtim_params);
 	}
+}
+
+/**
+ * lim_is_valid_frame(): validate RX frame using last processed frame details
+ * to find if it is duplicate frame.
+ *
+ * @last_processed_frm: last processed frame pointer.
+ * @pRxPacketInfo: RX packet.
+ *
+ * Frame treat as duplicate:
+ * if retry bit is set and
+ * 	 if source address and seq number matches with the last processed frame
+ *
+ * Return: false if duplicate frame, else true.
+ */
+bool lim_is_valid_frame(last_processed_msg *last_processed_frm,
+		uint8_t *pRxPacketInfo)
+{
+	uint16_t seq_num;
+	tpSirMacMgmtHdr pHdr;
+
+	if (!pRxPacketInfo) {
+		QDF_TRACE(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_ERROR,
+			  FL("Invalid RX frame"));
+		return false;
+	}
+
+	pHdr = WMA_GET_RX_MAC_HEADER(pRxPacketInfo);
+
+	if (pHdr->fc.retry == 0)
+		return true;
+
+	seq_num = (((pHdr->seqControl.seqNumHi <<
+			HIGH_SEQ_NUM_OFFSET) |
+			pHdr->seqControl.seqNumLo));
+
+	if (last_processed_frm->seq_num == seq_num &&
+		qdf_mem_cmp(last_processed_frm->sa, pHdr->sa, ETH_ALEN) == 0) {
+		QDF_TRACE(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_ERROR,
+		FL("Duplicate frame from "MAC_ADDRESS_STR " Seq Number %d"),
+		MAC_ADDR_ARRAY(pHdr->sa), seq_num);
+		return false;
+	}
+	return true;
+}
+
+/**
+ * lim_update_last_processed_frame(): update new processed frame info to cache.
+ *
+ * @last_processed_frm: last processed frame pointer.
+ * @pRxPacketInfo: Successfully processed RX packet.
+ *
+ * Return: None.
+ */
+void lim_update_last_processed_frame(last_processed_msg *last_processed_frm,
+		uint8_t *pRxPacketInfo)
+{
+	uint16_t seq_num;
+	tpSirMacMgmtHdr pHdr;
+
+	if (!pRxPacketInfo) {
+		QDF_TRACE(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_ERROR,
+			  FL("Invalid RX frame"));
+		return;
+	}
+
+	pHdr = WMA_GET_RX_MAC_HEADER(pRxPacketInfo);
+	seq_num = (((pHdr->seqControl.seqNumHi <<
+			HIGH_SEQ_NUM_OFFSET) |
+			pHdr->seqControl.seqNumLo));
+
+	qdf_mem_copy(last_processed_frm->sa, pHdr->sa, ETH_ALEN);
+	last_processed_frm->seq_num = seq_num;
 }
