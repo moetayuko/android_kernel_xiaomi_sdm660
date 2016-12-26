@@ -27,6 +27,8 @@
 #if !defined(__CDS_CONFIG_H)
 #define __CDS_CONFIG_H
 
+#define TX_WMM_AC_NUM	4
+
 /**
  * enum driver_type - Indicate the driver type to the cds, and based on this
  * do appropriate initialization.
@@ -52,10 +54,33 @@ enum cfg_sub_20_channel_width {
 };
 
 /**
+ * struct ol_tx_sched_wrr_ac_specs_t - the wrr ac specs params structure
+ * @wrr_skip_weight: map to ol_tx_sched_wrr_adv_category_info_t.specs.
+ *                            wrr_skip_weight
+ * @credit_threshold: map to ol_tx_sched_wrr_adv_category_info_t.specs.
+ *                            credit_threshold
+ * @send_limit: map to ol_tx_sched_wrr_adv_category_info_t.specs.
+ *                            send_limit
+ * @credit_reserve: map to ol_tx_sched_wrr_adv_category_info_t.specs.
+ *                            credit_reserve
+ * @discard_weight: map to ol_tx_sched_wrr_adv_category_info_t.specs.
+ *                            discard_weight
+ *
+ * This structure is for wrr ac specs params set from user, it will update
+ * its content corresponding to the ol_tx_sched_wrr_adv_category_info_t.specs.
+ */
+struct ol_tx_sched_wrr_ac_specs_t {
+	int wrr_skip_weight;
+	uint32_t credit_threshold;
+	uint16_t send_limit;
+	int credit_reserve;
+	int discard_weight;
+};
+
+/**
  * struct cds_config_info - Place Holder for cds configuration
  * @max_station: Max station supported
  * @max_bssid: Max Bssid Supported
- * @frame_xln_reqd: frame transmission required
  * @powersave_offload_enabled: Indicate if powersave offload is enabled
  * @sta_maxlimod_dtim: station max listen interval
  * @sta_mod_dtim: station mode DTIM
@@ -103,7 +128,6 @@ enum cfg_sub_20_channel_width {
 struct cds_config_info {
 	uint16_t max_station;
 	uint16_t max_bssid;
-	uint32_t frame_xln_reqd;
 	uint8_t powersave_offload_enabled;
 	uint8_t sta_maxlimod_dtim;
 	uint8_t sta_mod_dtim;
@@ -150,5 +174,7 @@ struct cds_config_info {
 	bool flow_steering_enabled;
 	bool self_recovery_enabled;
 	bool fw_timeout_crash;
+
+	struct ol_tx_sched_wrr_ac_specs_t ac_specs[TX_WMM_AC_NUM];
 };
 #endif /* !defined( __CDS_CONFIG_H ) */

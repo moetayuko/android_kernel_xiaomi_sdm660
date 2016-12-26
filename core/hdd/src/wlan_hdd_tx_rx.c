@@ -100,9 +100,9 @@ void hdd_tx_resume_timer_expired_handler(void *adapter_context)
 		return;
 	}
 
-	hddLog(LOG1, FL("Enabling queues"));
+	hdd_notice("Enabling queues");
 	wlan_hdd_netif_queue_control(pAdapter, WLAN_WAKE_ALL_NETIF_QUEUE,
-				   WLAN_CONTROL_PATH);
+				     WLAN_CONTROL_PATH);
 	return;
 }
 #if defined(CONFIG_PER_VDEV_TX_DESC_POOL)
@@ -153,6 +153,18 @@ hdd_tx_resume_false(hdd_adapter_t *pAdapter, bool tx_resume)
 }
 #endif
 
+static inline struct sk_buff *hdd_skb_orphan(hdd_adapter_t *pAdapter,
+		struct sk_buff *skb)
+{
+	if (pAdapter->tx_flow_low_watermark > 0)
+		skb_orphan(skb);
+	else {
+		skb = skb_unshare(skb, GFP_ATOMIC);
+	}
+
+	return skb;
+}
+
 /**
  * hdd_tx_resume_cb() - Resume OS TX Q.
  * @adapter_context: pointer to vdev apdapter
@@ -182,14 +194,13 @@ void hdd_tx_resume_cb(void *adapter_context, bool tx_resume)
 			qdf_mc_timer_stop(&pAdapter->tx_flow_control_timer);
 		}
 		if (qdf_unlikely(hdd_sta_ctx->hdd_ReassocScenario)) {
-			hddLog(LOGW,
-			       FL("flow control, tx queues un-pause avoided as we are in REASSOCIATING state"));
+			hdd_warn("flow control, tx queues un-pause avoided as we are in REASSOCIATING state");
 			       return;
 		}
-		hddLog(LOG1, FL("Enabling queues"));
+		hdd_notice("Enabling queues");
 		wlan_hdd_netif_queue_control(pAdapter,
-					 WLAN_WAKE_ALL_NETIF_QUEUE,
-					 WLAN_DATA_FLOW_CONTROL);
+					     WLAN_WAKE_ALL_NETIF_QUEUE,
+					     WLAN_DATA_FLOW_CONTROL);
 	}
 	hdd_tx_resume_false(pAdapter, tx_resume);
 
@@ -253,8 +264,8 @@ void hdd_get_tx_resource(hdd_adapter_t *adapter,
 				   adapter->tx_flow_low_watermark,
 				   adapter->tx_flow_high_watermark_offset)) {
 		hdd_info("Disabling queues lwm %d hwm offset %d",
-			adapter->tx_flow_low_watermark,
-			adapter->tx_flow_high_watermark_offset);
+			 adapter->tx_flow_low_watermark,
+			 adapter->tx_flow_high_watermark_offset);
 		wlan_hdd_netif_queue_control(adapter, WLAN_STOP_ALL_NETIF_QUEUE,
 					     WLAN_DATA_FLOW_CONTROL);
 		if ((adapter->tx_flow_timer_initialized == true) &&
@@ -268,6 +279,14 @@ void hdd_get_tx_resource(hdd_adapter_t *adapter,
 			adapter->hdd_stats.hddTxRxStats.is_txflow_paused = true;
 		}
 	}
+}
+
+#else
+
+static inline struct sk_buff *hdd_skb_orphan(hdd_adapter_t *pAdapter,
+		struct sk_buff *skb)
+{
+	return skb_unshare(skb, GFP_ATOMIC);
 }
 
 #endif /* QCA_LL_LEGACY_TX_FLOW_CONTROL */
@@ -436,7 +455,8 @@ static int __hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	hdd_get_transmit_sta_id(pAdapter, skb, &STAId);
 	if (STAId >= WLAN_MAX_STA_COUNT) {
-		hddLog(LOGE, "Invalid station id, transmit operation suspended");
+		QDF_TRACE(QDF_MODULE_ID_HDD_DATA, LOGE,
+			  "Invalid station id, transmit operation suspended");
 		goto drop_pkt;
 	}
 
@@ -447,8 +467,26 @@ static int __hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	ac = hdd_qdisc_ac_to_tl_ac[skb->queue_mapping];
 
 	if (!qdf_nbuf_ipa_owned_get(skb)) {
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(3, 19, 0))
+		/*
+		* The TCP TX throttling logic is changed a little after
+		* 3.19-rc1 kernel, the TCP sending limit will be smaller,
+		* which will throttle the TCP packets to the host driver.
+		* The TCP UP LINK throughput will drop heavily. In order to
+		* fix this issue, need to orphan the socket buffer asap, which
+		* will call skb's destructor to notify the TCP stack that the
+		* SKB buffer is unowned. And then the TCP stack will pump more
+		* packets to host driver.
+		*
+		* The TX packets might be dropped for UDP case in the iperf
+		* testing. So need to be protected by follow control.
+		*/
+		skb = hdd_skb_orphan(pAdapter, skb);
+#else
 		/* Check if the buffer has enough header room */
 		skb = skb_unshare(skb, GFP_ATOMIC);
+#endif
+
 		if (!skb)
 			goto drop_pkt_accounting;
 	}
@@ -739,8 +777,7 @@ QDF_STATUS hdd_init_tx_rx(hdd_adapter_t *pAdapter)
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
 	if (NULL == pAdapter) {
-		QDF_TRACE(QDF_MODULE_ID_HDD_DATA, QDF_TRACE_LEVEL_ERROR,
-			  FL("pAdapter is NULL"));
+		hdd_err("pAdapter is NULL");
 		QDF_ASSERT(0);
 		return QDF_STATUS_E_FAILURE;
 	}
@@ -760,8 +797,7 @@ QDF_STATUS hdd_deinit_tx_rx(hdd_adapter_t *pAdapter)
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
 	if (NULL == pAdapter) {
-		QDF_TRACE(QDF_MODULE_ID_HDD_DATA, QDF_TRACE_LEVEL_ERROR,
-			  FL("pAdapter is NULL"));
+		hdd_err("pAdapter is NULL");
 		QDF_ASSERT(0);
 		return QDF_STATUS_E_FAILURE;
 	}
@@ -974,13 +1010,17 @@ QDF_STATUS hdd_rx_packet_cbk(void *context, qdf_nbuf_t rxBuf)
 		return QDF_STATUS_SUCCESS;
 	}
 
-#ifdef WLAN_FEATURE_HOLD_RX_WAKELOCK
-	cds_host_diag_log_work(&pHddCtx->rx_wake_lock,
-			       HDD_WAKE_LOCK_DURATION,
-			       WIFI_POWER_EVENT_WAKELOCK_HOLD_RX);
-	qdf_wake_lock_timeout_acquire(&pHddCtx->rx_wake_lock,
-				      HDD_WAKE_LOCK_DURATION);
-#endif
+	/* hold configurable wakelock for unicast traffic */
+	if (pHddCtx->config->rx_wakelock_timeout &&
+	    skb->pkt_type != PACKET_BROADCAST &&
+	    skb->pkt_type != PACKET_MULTICAST) {
+		cds_host_diag_log_work(&pHddCtx->rx_wake_lock,
+				       pHddCtx->config->rx_wakelock_timeout,
+				       WIFI_POWER_EVENT_WAKELOCK_HOLD_RX);
+		qdf_wake_lock_timeout_acquire(&pHddCtx->rx_wake_lock,
+					      pHddCtx->config->
+						      rx_wakelock_timeout);
+	}
 
 	/* Remove SKB from internal tracking table before submitting
 	 * it to stack
@@ -1318,7 +1358,7 @@ int hdd_set_mon_rx_cb(struct net_device *dev)
 	/* peer is created wma_vdev_attach->wma_create_peer */
 	qdf_status = ol_txrx_register_peer(&sta_desc);
 	if (QDF_STATUS_SUCCESS != qdf_status) {
-		hdd_err("WLANTL_RegisterSTAClient() failed to register. Status= %d [0x%08X]",
+		hdd_err("ol_txrx_register_peer() failed to register. Status= %d [0x%08X]",
 			qdf_status, qdf_status);
 		goto exit;
 	}

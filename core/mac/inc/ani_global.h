@@ -606,13 +606,6 @@ typedef struct sAniSirLim {
 	/* UAPSD flag used on AP */
 	uint8_t gUapsdEnable;
 
-	/* Used on STA, this is a static UAPSD mask setting
-	 * derived  from SME_JOIN_REQ and SME_REASSOC_REQ. If a
-	 * particular AC bit is set, it means the AC is both
-	 * trigger enabled and delivery enabled.
-	 */
-	uint8_t gUapsdPerAcBitmask;
-
 	/* Used on STA for AC downgrade. This is a dynamic mask
 	 * setting which keep tracks of ACs being admitted.
 	 * If bit is set to 0: That partiular AC is not admitted
@@ -830,6 +823,7 @@ typedef struct sAniSirLim {
 		uint32_t scan_id, uint32_t flags);
 	uint8_t retry_packet_cnt;
 	uint8_t scan_disabled;
+	uint8_t beacon_probe_rsp_cnt_per_scan;
 } tAniSirLim, *tpAniSirLim;
 
 struct mgmt_frm_reg_info {
@@ -972,7 +966,7 @@ typedef struct sAniSirGlobal {
 	enum auth_tx_ack_status auth_ack_status;
 	uint8_t user_configured_nss;
 	bool sta_prefer_80MHz_over_160MHz;
-	bool is_11d_hint;
+	enum  country_src reg_hint_src;
 } tAniSirGlobal;
 
 typedef enum {

@@ -2615,6 +2615,13 @@ wlansap_channel_change_request(void *pSapCtx, uint8_t target_channel)
 	}
 	mac_ctx = PMAC_STRUCT(hHal);
 	phy_mode = sapContext->csr_roamProfile.phyMode;
+
+	if (sapContext->csr_roamProfile.ChannelInfo.numOfChannels == 0 ||
+	    sapContext->csr_roamProfile.ChannelInfo.ChannelList == NULL) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			FL("Invalid channel list"));
+		return QDF_STATUS_E_FAULT;
+	}
 	sapContext->csr_roamProfile.ChannelInfo.ChannelList[0] = target_channel;
 	/*
 	 * We are getting channel bonding mode from sapDfsInfor structure
@@ -3663,5 +3670,31 @@ QDF_STATUS wlansap_set_tx_leakage_threshold(tHalHandle hal,
 	QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO,
 			"%s: leakage_threshold %d", __func__,
 			mac->sap.SapDfsInfo.tx_leakage_threshold);
+	return QDF_STATUS_SUCCESS;
+}
+
+/*
+ * wlansap_set_invalid_session() - set session ID to invalid
+ * @cds_ctx: pointer of global context
+ *
+ * This function sets session ID to invalid
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlansap_set_invalid_session(void *cds_ctx)
+{
+	ptSapContext psapctx;
+
+	psapctx = CDS_GET_SAP_CB(cds_ctx);
+	if (NULL == psapctx) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			FL("Invalid SAP pointer from pctx"));
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	psapctx->sessionId = CSR_SESSION_ID_INVALID;
+	psapctx->isSapSessionOpen = eSAP_FALSE;
+
 	return QDF_STATUS_SUCCESS;
 }

@@ -2359,6 +2359,16 @@ static const u8 *wma_wow_wake_reason_str(A_INT32 wake_reason)
 		return "ACTION_FRAME_RECV";
 	case WOW_REASON_BPF_ALLOW:
 		return "WOW_REASON_BPF_ALLOW";
+	case WOW_REASON_NAN_DATA:
+		return "WOW_REASON_NAN_DATA";
+	case WOW_REASON_TDLS_CONN_TRACKER_EVENT:
+		return "WOW_REASON_TDLS_CONN_TRACKER_EVENT";
+	case WOW_REASON_CRITICAL_LOG:
+		return "WOW_REASON_CRITICAL_LOG";
+	case WOW_REASON_P2P_LISTEN_OFFLOAD:
+		return "WOW_REASON_P2P_LISTEN_OFFLOAD";
+	case WOW_REASON_NAN_EVENT_WAKE_HOST:
+		return "WOW_REASON_NAN_EVENT_WAKE_HOST";
 	}
 	return "unknown";
 }
@@ -3873,10 +3883,11 @@ void wma_enable_disable_wakeup_event(WMA_HANDLE handle,
 /**
  * wma_enable_wow_in_fw() - wnable wow in fw
  * @wma: wma handle
+ * @wow_flags: bitmap of WMI WOW flags to pass to FW
  *
  * Return: QDF status
  */
-QDF_STATUS wma_enable_wow_in_fw(WMA_HANDLE handle)
+QDF_STATUS wma_enable_wow_in_fw(WMA_HANDLE handle, uint32_t wow_flags)
 {
 	tp_wma_handle wma = handle;
 	int ret;
@@ -3912,6 +3923,7 @@ QDF_STATUS wma_enable_wow_in_fw(WMA_HANDLE handle)
 
 	param.enable = true;
 	param.can_suspend_link = htc_can_suspend_link(wma->htc_handle);
+	param.flags = wow_flags;
 	ret = wmi_unified_wow_enable_send(wma->wmi_handle, &param,
 				   WMA_WILDCARD_PDEV_ID);
 	if (ret) {
@@ -5545,6 +5557,8 @@ QDF_STATUS wma_process_get_peer_info_req
 
 	ret = wmi_unified_cmd_send(wma->wmi_handle, buf, len,
 				   WMI_PEER_INFO_REQ_CMDID);
+	if (ret != QDF_STATUS_SUCCESS)
+		wmi_buf_free(buf);
 
 	WMA_LOGE("IBSS get peer info cmd sent len: %d, vdev %d"
 		 " command id: %d, status: %d", len,
@@ -5636,6 +5650,8 @@ QDF_STATUS wma_process_rmc_enable_ind(tp_wma_handle wma)
 
 	ret = wmi_unified_cmd_send(wma->wmi_handle, buf, len,
 				   WMI_RMC_SET_MODE_CMDID);
+	if (ret != QDF_STATUS_SUCCESS)
+		wmi_buf_free(buf);
 
 	WMA_LOGE("Enable RMC cmd sent len: %d, vdev %d" " command id: %d,"
 		 " status: %d", len, vdev_id, WMI_RMC_SET_MODE_CMDID, ret);
@@ -5686,6 +5702,8 @@ QDF_STATUS wma_process_rmc_disable_ind(tp_wma_handle wma)
 
 	ret = wmi_unified_cmd_send(wma->wmi_handle, buf, len,
 				   WMI_RMC_SET_MODE_CMDID);
+	if (ret != QDF_STATUS_SUCCESS)
+		wmi_buf_free(buf);
 
 	WMA_LOGE("Disable RMC cmd sent len: %d, vdev %d" " command id: %d,"
 		 " status: %d", len, vdev_id, WMI_RMC_SET_MODE_CMDID, ret);
@@ -5749,6 +5767,8 @@ QDF_STATUS wma_process_rmc_action_period_ind(tp_wma_handle wma)
 
 	ret = wmi_unified_cmd_send(wma->wmi_handle, buf, len,
 				   WMI_RMC_SET_ACTION_PERIOD_CMDID);
+	if (ret != QDF_STATUS_SUCCESS)
+		wmi_buf_free(buf);
 
 	WMA_LOGE("RMC action period %d cmd sent len: %d, vdev %d"
 		 " command id: %d, status: %d", periodicity_msec,
@@ -6446,13 +6466,14 @@ failure:
 /**
  * __wma_bus_suspend(): handles bus suspend for wma
  * @type: is this suspend part of runtime suspend or system suspend?
+ * @wow_flags: bitmap of WMI WOW flags to pass to FW
  *
  * Bails if a scan is in progress.
  * Calls the appropriate handlers based on configuration and event.
  *
  * Return: 0 for success or error code
  */
-static int __wma_bus_suspend(enum qdf_suspend_type type)
+static int __wma_bus_suspend(enum qdf_suspend_type type, uint32_t wow_flags)
 {
 	WMA_HANDLE handle = cds_get_context(QDF_MODULE_ID_WMA);
 	if (NULL == handle) {
@@ -6476,7 +6497,7 @@ static int __wma_bus_suspend(enum qdf_suspend_type type)
 				wma_is_wow_mode_selected(handle));
 
 	if (wma_is_wow_mode_selected(handle)) {
-		QDF_STATUS status = wma_enable_wow_in_fw(handle);
+		QDF_STATUS status = wma_enable_wow_in_fw(handle, wow_flags);
 		return qdf_status_to_os_return(status);
 	}
 
@@ -6485,6 +6506,7 @@ static int __wma_bus_suspend(enum qdf_suspend_type type)
 
 /**
  * wma_runtime_suspend() - handles runtime suspend request from hdd
+ * @wow_flags: bitmap of WMI WOW flags to pass to FW
  *
  * Calls the appropriate handler based on configuration and event.
  * Last busy marking should prevent race conditions between processing
@@ -6496,22 +6518,23 @@ static int __wma_bus_suspend(enum qdf_suspend_type type)
  *
  * Return: 0 for success or error code
  */
-int wma_runtime_suspend(void)
+int wma_runtime_suspend(uint32_t wow_flags)
 {
-	return __wma_bus_suspend(QDF_RUNTIME_SUSPEND);
+	return __wma_bus_suspend(QDF_RUNTIME_SUSPEND, wow_flags);
 }
 
 /**
  * wma_bus_suspend() - handles bus suspend request from hdd
+ * @wow_flags: bitmap of WMI WOW flags to pass to FW
  *
  * Calls the appropriate handler based on configuration and event
  *
  * Return: 0 for success or error code
  */
-int wma_bus_suspend(void)
+int wma_bus_suspend(uint32_t wow_flags)
 {
 
-	return __wma_bus_suspend(QDF_SYSTEM_SUSPEND);
+	return __wma_bus_suspend(QDF_SYSTEM_SUSPEND, wow_flags);
 }
 
 /**
@@ -8313,6 +8336,30 @@ QDF_STATUS wma_enable_disable_caevent_ind(tp_wma_handle wma, uint8_t val)
 	return QDF_STATUS_SUCCESS;
 }
 
+QDF_STATUS wma_set_sar_limit(WMA_HANDLE handle,
+		struct sar_limit_cmd_params *sar_limit_params)
+{
+	int ret;
+	tp_wma_handle wma = (tp_wma_handle) handle;
+
+	if (!wma || !wma->wmi_handle) {
+		WMA_LOGE("%s: WMA is closed, can not issue set sar limit msg",
+			__func__);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	if (sar_limit_params == NULL) {
+		WMA_LOGE("%s: set sar limit ptr NULL",
+			__func__);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	ret = wmi_unified_send_sar_limit_cmd(wma->wmi_handle,
+				sar_limit_params);
+
+	return ret;
+}
+
 #ifdef WLAN_FEATURE_DISA
 /**
  * wma_encrypt_decrypt_msg() -
@@ -8417,5 +8464,182 @@ int wma_encrypt_decrypt_msg_handler(void *handle, uint8_t *data,
 	pmac->sme.encrypt_decrypt_cb(pmac->hHdd, &encrypt_decrypt_rsp_params);
 
 	return 0;
+}
+#endif
+
+/**
+ * wma_unified_power_debug_stats_event_handler() - WMA handler function to
+ * handle Power stats event from firmware
+ * @handle: Pointer to wma handle
+ * @cmd_param_info: Pointer to Power stats event TLV
+ * @len: Length of the cmd_param_info
+ *
+ * Return: 0 on success, error number otherwise
+ */
+#ifdef WLAN_POWER_DEBUGFS
+int wma_unified_power_debug_stats_event_handler(void *handle,
+			uint8_t *cmd_param_info, uint32_t len)
+{
+	WMI_PDEV_CHIP_POWER_STATS_EVENTID_param_tlvs *param_tlvs;
+	struct power_stats_response *power_stats_results;
+	wmi_pdev_chip_power_stats_event_fixed_param *param_buf;
+	uint32_t power_stats_len, stats_registers_len, *debug_registers;
+
+	tpAniSirGlobal mac = (tpAniSirGlobal)cds_get_context(QDF_MODULE_ID_PE);
+	param_tlvs =
+		(WMI_PDEV_CHIP_POWER_STATS_EVENTID_param_tlvs *) cmd_param_info;
+
+	param_buf = (wmi_pdev_chip_power_stats_event_fixed_param *)
+		param_tlvs->fixed_param;
+	if (!mac || !mac->sme.power_stats_resp_callback) {
+		WMA_LOGD("%s: NULL mac ptr or HDD callback is null", __func__);
+		return -EINVAL;
+	}
+
+	if (!param_buf) {
+		WMA_LOGD("%s: NULL power stats event fixed param", __func__);
+		return -EINVAL;
+	}
+
+	debug_registers = param_tlvs->debug_registers;
+	stats_registers_len =
+		(sizeof(uint32_t) * param_buf->num_debug_register);
+	power_stats_len = stats_registers_len + sizeof(*power_stats_results);
+	power_stats_results = qdf_mem_malloc(power_stats_len);
+	if (!power_stats_results) {
+		WMA_LOGD("%s: could not allocate mem for power stats results",
+				__func__);
+		return -ENOMEM;
+	}
+	WMA_LOGD("Cumulative sleep time %d cumulative total on time %d deep sleep enter counter %d last deep sleep enter tstamp ts %d debug registers fmt %d num debug register %d",
+			param_buf->cumulative_sleep_time_ms,
+			param_buf->cumulative_total_on_time_ms,
+			param_buf->deep_sleep_enter_counter,
+			param_buf->last_deep_sleep_enter_tstamp_ms,
+			param_buf->debug_register_fmt,
+			param_buf->num_debug_register);
+
+	power_stats_results->cumulative_sleep_time_ms
+		= param_buf->cumulative_sleep_time_ms;
+	power_stats_results->cumulative_total_on_time_ms
+		= param_buf->cumulative_total_on_time_ms;
+	power_stats_results->deep_sleep_enter_counter
+		= param_buf->deep_sleep_enter_counter;
+	power_stats_results->last_deep_sleep_enter_tstamp_ms
+		= param_buf->last_deep_sleep_enter_tstamp_ms;
+	power_stats_results->debug_register_fmt
+		= param_buf->debug_register_fmt;
+	power_stats_results->num_debug_register
+		= param_buf->num_debug_register;
+
+	power_stats_results->debug_registers
+		= (uint32_t *)(power_stats_results + 1);
+
+	qdf_mem_copy(power_stats_results->debug_registers,
+			debug_registers, stats_registers_len);
+
+	mac->sme.power_stats_resp_callback(power_stats_results,
+			mac->sme.power_debug_stats_context);
+	qdf_mem_free(power_stats_results);
+	return 0;
+}
+#else
+int wma_unified_power_debug_stats_event_handler(void *handle,
+		uint8_t *cmd_param_info, uint32_t len)
+{
+	return 0;
+}
+#endif
+
+#ifdef WLAN_FEATURE_UDP_RESPONSE_OFFLOAD
+/**
+* wma_send_udp_resp_offload_cmd() - send wmi cmd of udp response offload
+* infomation to fw.
+* @wma_handle: wma handler
+* @udp_response: udp_resp_offload struct pointer
+*
+* Return: QDF_STATUS
+*/
+QDF_STATUS wma_send_udp_resp_offload_cmd(tp_wma_handle wma_handle,
+					struct udp_resp_offload *udp_response)
+{
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	wmi_buf_t buf;
+	WMI_WOW_UDP_SVC_OFLD_CMD_fixed_param *cmd;
+	uint16_t len;
+	uint16_t pattern_len = 0;
+	uint16_t response_len = 0;
+	uint16_t udp_len = 0;
+	uint16_t resp_len = 0;
+
+	WMA_LOGD("%s: Enter", __func__);
+	if (1 == udp_response->enable) {
+		pattern_len = strlen(udp_response->udp_payload_filter);
+		response_len = strlen(udp_response->udp_response_payload);
+	}
+
+	udp_len = (pattern_len % 4) ?
+			(4 * ((pattern_len / 4) + 1)) : (pattern_len);
+
+	resp_len = (response_len % 4) ?
+			(4 * ((response_len / 4) + 1)) : (response_len);
+
+
+	len = sizeof(*cmd) + udp_len + resp_len + 2 * WMI_TLV_HDR_SIZE;
+	buf = wmi_buf_alloc(wma_handle->wmi_handle, len);
+	if (!buf) {
+		 WMA_LOGE("wmi_buf_alloc failed");
+		 return QDF_STATUS_E_NOMEM;
+	}
+
+	cmd = (WMI_WOW_UDP_SVC_OFLD_CMD_fixed_param *)wmi_buf_data(buf);
+
+	WMITLV_SET_HDR(&cmd->tlv_header,
+			WMITLV_TAG_STRUC_WMI_WOW_UDP_SVC_OFLD_CMD_fixed_param,
+			WMITLV_GET_STRUCT_TLVLEN(
+				WMI_WOW_UDP_SVC_OFLD_CMD_fixed_param));
+
+	cmd->vdev_id = udp_response->vdev_id;
+	cmd->enable = udp_response->enable;
+	cmd->dest_port = udp_response->dest_port;
+	cmd->pattern_len = pattern_len;
+	cmd->response_len = response_len;
+
+
+	WMITLV_SET_HDR((A_UINT32 *)(cmd + 1),
+			WMITLV_TAG_ARRAY_BYTE,
+			udp_len);
+
+	qdf_mem_copy((void *)(cmd + 1) + WMI_TLV_HDR_SIZE,
+			(void *)udp_response->udp_payload_filter,
+			cmd->pattern_len);
+	WMITLV_SET_HDR((A_UINT32 *)((void *)(cmd + 1) +
+			WMI_TLV_HDR_SIZE + udp_len),
+			WMITLV_TAG_ARRAY_BYTE,
+			resp_len);
+
+	qdf_mem_copy((void *)(cmd + 1) + WMI_TLV_HDR_SIZE +
+			udp_len + WMI_TLV_HDR_SIZE,
+			(void *)udp_response->udp_response_payload,
+			cmd->response_len);
+
+	WMA_LOGD("wma_set_udp_resp_cmd: enable:%d vdev_id:%d dest_port:%u",
+		cmd->enable, cmd->vdev_id, cmd->dest_port);
+
+	if (wmi_unified_cmd_send(wma_handle->wmi_handle, buf, len,
+				 WMI_WOW_UDP_SVC_OFLD_CMDID)) {
+		WMA_LOGE("Failed to send set udp resp offload");
+		wmi_buf_free(buf);
+		status = QDF_STATUS_E_FAILURE;
+	}
+
+	WMA_LOGD("%s: Exit", __func__);
+	return status;
+}
+#else
+inline QDF_STATUS wma_send_udp_resp_offload_cmd(tp_wma_handle wma_handle,
+					struct udp_resp_offload *udp_response)
+{
+	return QDF_STATUS_E_FAILURE;
 }
 #endif

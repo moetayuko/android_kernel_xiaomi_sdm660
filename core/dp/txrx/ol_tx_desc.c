@@ -43,32 +43,19 @@
 #include <ol_txrx.h>
 
 #ifdef QCA_SUPPORT_TXDESC_SANITY_CHECKS
-extern uint32_t *g_dbg_htt_desc_end_addr, *g_dbg_htt_desc_start_addr;
-#endif
-
-#ifdef QCA_SUPPORT_TXDESC_SANITY_CHECKS
 static inline void ol_tx_desc_sanity_checks(struct ol_txrx_pdev_t *pdev,
 					struct ol_tx_desc_t *tx_desc)
 {
-	if (tx_desc->pkt_type != 0xff) {
+	if (tx_desc->pkt_type != ol_tx_frm_freed) {
 		TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
 				   "%s Potential tx_desc corruption pkt_type:0x%x pdev:0x%p",
 				   __func__, tx_desc->pkt_type, pdev);
 		qdf_assert(0);
 	}
-	if ((uint32_t *) tx_desc->htt_tx_desc <
-		    g_dbg_htt_desc_start_addr
-		    || (uint32_t *) tx_desc->htt_tx_desc >
-		    g_dbg_htt_desc_end_addr) {
-			TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
-				   "%s Potential htt_desc curruption:0x%p pdev:0x%p\n",
-				   __func__, tx_desc->htt_tx_desc, pdev);
-			qdf_assert(0);
-	}
 }
 static inline void ol_tx_desc_reset_pkt_type(struct ol_tx_desc_t *tx_desc)
 {
-	tx_desc->pkt_type = 0xff;
+	tx_desc->pkt_type = ol_tx_frm_freed;
 }
 #ifdef QCA_COMPUTE_TX_DELAY
 static inline void ol_tx_desc_compute_delay(struct ol_tx_desc_t *tx_desc)
@@ -105,8 +92,6 @@ static inline void ol_tx_desc_reset_timestamp(struct ol_tx_desc_t *tx_desc)
 }
 #endif
 
-#ifdef CONFIG_HL_SUPPORT
-
 /**
  * ol_tx_desc_vdev_update() - vedv assign.
  * @tx_desc: tx descriptor pointer
@@ -120,15 +105,6 @@ ol_tx_desc_vdev_update(struct ol_tx_desc_t *tx_desc,
 {
 	tx_desc->vdev = vdev;
 }
-#else
-
-static inline void
-ol_tx_desc_vdev_update(struct ol_tx_desc_t *tx_desc,
-		       struct ol_txrx_vdev_t *vdev)
-{
-	return;
-}
-#endif
 
 #ifdef CONFIG_PER_VDEV_TX_DESC_POOL
 
@@ -236,6 +212,7 @@ struct ol_tx_desc_t *ol_tx_desc_alloc(struct ol_txrx_pdev_t *pdev,
 			}
 			ol_tx_desc_sanity_checks(pdev, tx_desc);
 			ol_tx_desc_compute_delay(tx_desc);
+			ol_tx_desc_vdev_update(tx_desc, vdev);
 			qdf_atomic_inc(&tx_desc->ref_cnt);
 		} else {
 			pool->pkt_drop_no_desc++;
@@ -413,15 +390,6 @@ void ol_tx_desc_free(struct ol_txrx_pdev_t *pdev, struct ol_tx_desc_t *tx_desc)
 }
 #endif
 
-void
-dump_pkt(qdf_nbuf_t nbuf, qdf_dma_addr_t nbuf_paddr, int len)
-{
-	qdf_print("%s: Pkt: VA 0x%p PA 0x%llx len %d\n", __func__,
-		  qdf_nbuf_data(nbuf), (long long unsigned int)nbuf_paddr, len);
-	print_hex_dump(KERN_DEBUG, "Pkt:   ", DUMP_PREFIX_ADDRESS, 16, 4,
-		       qdf_nbuf_data(nbuf), len, true);
-}
-
 const uint32_t htt_to_ce_pkt_type[] = {
 	[htt_pkt_type_raw] = tx_pkt_type_raw,
 	[htt_pkt_type_native_wifi] = tx_pkt_type_native_wifi,
@@ -580,7 +548,7 @@ struct ol_tx_desc_t *ol_tx_desc_ll(struct ol_txrx_pdev_t *pdev,
 			qdf_print("%s:%d: htt_fdesc=%p frag=%d frag_vaddr=0x%p frag_paddr=0x%llx len=%zu\n",
 				  __func__, __LINE__, tx_desc->htt_frag_desc,
 				  i-1, frag_vaddr, frag_paddr, frag_len);
-			dump_pkt(netbuf, frag_paddr, 64);
+			ol_txrx_dump_pkt(netbuf, frag_paddr, 64);
 #endif /* HELIUMPLUS_DEBUG */
 #else /* ! defined(HELIUMPLUSPADDR64) */
 			htt_tx_desc_frag(pdev->htt_pdev, tx_desc->htt_tx_desc, i - 1,
@@ -693,7 +661,7 @@ void ol_tx_desc_frame_free_nonstd(struct ol_txrx_pdev_t *pdev,
 	qdf_nbuf_unmap(pdev->osdev, tx_desc->netbuf, QDF_DMA_TO_DEVICE);
 	/* check the frame type to see what kind of special steps are needed */
 	if ((tx_desc->pkt_type >= OL_TXRX_MGMT_TYPE_BASE) &&
-		   (tx_desc->pkt_type != 0xff)) {
+		   (tx_desc->pkt_type != ol_tx_frm_freed)) {
 		qdf_dma_addr_t frag_desc_paddr = 0;
 
 #if defined(HELIUMPLUS_PADDR64)

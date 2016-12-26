@@ -691,9 +691,21 @@ void lim_process_mlm_assoc_cnf(tpAniSirGlobal mac_ctx,
 	}
 	if (((tLimMlmAssocCnf *) msg)->resultCode != eSIR_SME_SUCCESS) {
 		/* Association failure */
-		lim_log(mac_ctx, LOG1, FL("SessionId:%d Association failure"),
-			session_entry->peSessionId);
-		session_entry->limSmeState = eLIM_SME_JOIN_FAILURE_STATE;
+		lim_log(mac_ctx, LOG1, FL("SessionId:%d Association failure resultCode: %d limSmeState:%d"),
+			session_entry->peSessionId,
+			((tLimMlmAssocCnf *) msg)->resultCode,
+			session_entry->limSmeState);
+
+		/* If driver gets deauth when its waiting for ADD_STA_RSP then
+		 * we need to do DEL_STA followed by DEL_BSS. So based on below
+		 * reason-code here we decide whether to do only DEL_BSS or
+		 * DEL_STA + DEL_BSS.
+		 */
+		if (((tLimMlmAssocCnf *) msg)->resultCode !=
+		    eSIR_SME_JOIN_DEAUTH_FROM_AP_DURING_ADD_STA)
+			session_entry->limSmeState =
+				eLIM_SME_JOIN_FAILURE_STATE;
+
 		MTRACE(mac_trace(mac_ctx, TRACE_CODE_SME_STATE,
 			session_entry->peSessionId, mac_ctx->lim.gLimSmeState));
 		/*
@@ -3282,8 +3294,19 @@ void lim_process_rx_scan_event(tpAniSirGlobal pMac, void *buf)
 	switch (pScanEvent->event) {
 	case SIR_SCAN_EVENT_STARTED:
 		break;
-	case SIR_SCAN_EVENT_START_FAILED:
 	case SIR_SCAN_EVENT_COMPLETED:
+	lim_log(pMac, LOG1, FL("No.of beacons and probe response received per scan %d"),
+		pMac->lim.beacon_probe_rsp_cnt_per_scan);
+#ifdef FEATURE_WLAN_DIAG_SUPPORT_LIM    /* FEATURE_WLAN_DIAG_SUPPORT */
+	lim_diag_event_report(pMac, WLAN_PE_DIAG_SCAN_COMPLETE_EVENT, NULL,
+			      eSIR_SUCCESS, eSIR_SUCCESS);
+	if (pMac->lim.beacon_probe_rsp_cnt_per_scan)
+		lim_diag_event_report(pMac,
+				      WLAN_PE_DIAG_SCAN_RESULT_FOUND_EVENT,
+				      NULL, eSIR_SUCCESS, eSIR_SUCCESS);
+#endif
+	/* Fall through */
+	case SIR_SCAN_EVENT_START_FAILED:
 		if (ROC_SCAN_REQUESTOR_ID == pScanEvent->requestor) {
 			lim_send_sme_roc_rsp(pMac, eWNI_SME_REMAIN_ON_CHN_RSP,
 					 QDF_STATUS_SUCCESS,

@@ -1632,6 +1632,38 @@ void ol_cfg_set_flow_control_parameters(struct txrx_pdev_cfg_param_t *olCfg,
 }
 #endif
 
+/**
+ * ol_cfg_update_ac_specs_params() - update ac_specs params
+ * @olcfg: cfg handle
+ * @mac_params: mac params
+ *
+ * Return: none
+ */
+static void ol_cfg_update_ac_specs_params(struct txrx_pdev_cfg_param_t *olcfg,
+		struct cds_config_info *cds_cfg)
+{
+	int i;
+
+	if (NULL == olcfg)
+		return;
+
+	if (NULL == cds_cfg)
+		return;
+
+	for (i = 0; i < OL_TX_NUM_WMM_AC; i++) {
+		olcfg->ac_specs[i].wrr_skip_weight =
+			cds_cfg->ac_specs[i].wrr_skip_weight;
+		olcfg->ac_specs[i].credit_threshold =
+			cds_cfg->ac_specs[i].credit_threshold;
+		olcfg->ac_specs[i].send_limit =
+			cds_cfg->ac_specs[i].send_limit;
+		olcfg->ac_specs[i].credit_reserve =
+			cds_cfg->ac_specs[i].credit_reserve;
+		olcfg->ac_specs[i].discard_weight =
+			cds_cfg->ac_specs[i].discard_weight;
+	}
+}
+
 #ifdef WLAN_FEATURE_NAN
 /**
  * wma_set_nan_enable() - set nan enable flag in WMA handle
@@ -1966,6 +1998,7 @@ QDF_STATUS wma_open(void *cds_context,
 	olCfg.ce_classify_enabled = cds_cfg->ce_classify_enabled;
 
 	ol_cfg_set_flow_control_parameters(&olCfg, cds_cfg);
+	ol_cfg_update_ac_specs_params(&olCfg, cds_cfg);
 
 	((p_cds_contextType) cds_context)->cfg_ctx =
 		ol_pdev_cfg_attach(((p_cds_contextType) cds_context)->qdf_ctx,
@@ -2006,7 +2039,6 @@ QDF_STATUS wma_open(void *cds_context,
 	cds_cfg->max_station = wma_get_number_of_peers_supported(wma_handle);
 
 	cds_cfg->max_bssid = WMA_MAX_SUPPORTED_BSS;
-	cds_cfg->frame_xln_reqd = 0;
 
 	wma_handle->wlan_resource_config.num_wow_filters =
 		cds_cfg->max_wow_filters;
@@ -2025,7 +2057,6 @@ QDF_STATUS wma_open(void *cds_context,
 	wma_handle->ol_ini_info = cds_cfg->ol_ini_info;
 	wma_handle->max_station = cds_cfg->max_station;
 	wma_handle->max_bssid = cds_cfg->max_bssid;
-	wma_handle->frame_xln_reqd = cds_cfg->frame_xln_reqd;
 	wma_handle->driver_type = cds_cfg->driver_type;
 	wma_handle->ssdp = cds_cfg->ssdp;
 	wma_handle->enable_mc_list = cds_cfg->enable_mc_list;
@@ -2172,6 +2203,15 @@ QDF_STATUS wma_open(void *cds_context,
 					   WMI_UPDATE_STATS_EVENTID,
 					   wma_stats_event_handler,
 					   WMA_RX_SERIALIZER_CTX);
+
+#ifdef WLAN_POWER_DEBUGFS
+	/* register for Chip Power stats event */
+	wmi_unified_register_event_handler(wma_handle->wmi_handle,
+				WMI_PDEV_CHIP_POWER_STATS_EVENTID,
+				wma_unified_power_debug_stats_event_handler,
+				WMA_RX_SERIALIZER_CTX);
+#endif
+
 	/* register for linkspeed response event */
 	wmi_unified_register_event_handler(wma_handle->wmi_handle,
 					   WMI_PEER_ESTIMATED_LINKSPEED_EVENTID,
@@ -5914,7 +5954,6 @@ static QDF_STATUS wma_update_wep_default_key(tp_wma_handle wma,
 	return QDF_STATUS_SUCCESS;
 }
 
-
 /**
  * wma_update_tx_fail_cnt_th() - Set threshold for TX pkt fail
  * @wma_handle: WMA handle
@@ -6078,6 +6117,133 @@ void wma_update_sta_inactivity_timeout(tp_wma_handle wma,
 			min_inactive_time, max_inactive_time,
 			max_unresponsive_time);
 }
+
+#ifdef WLAN_FEATURE_WOW_PULSE
+
+
+#define WMI_WOW_HOSTWAKEUP_GPIO_CMD_FIXED_PARAM \
+WMI_WOW_HOSTWAKEUP_GPIO_PIN_PATTERN_CONFIG_CMD_fixed_param
+
+
+#define WMITLV_TAG_HOSTWAKEUP_GPIO_CMD_FIXED_PARAM \
+WMITLV_TAG_STRUC_wmi_wow_hostwakeup_gpio_pin_pattern_config_cmd_fixed_param
+
+/**
+* wma_send_wow_pulse_cmd() - send wmi cmd of wow pulse cmd
+* infomation to fw.
+* @wma_handle: wma handler
+* @udp_response: wow_pulse_mode pointer
+*
+* Return: Return QDF_STATUS
+*/
+static QDF_STATUS wma_send_wow_pulse_cmd(tp_wma_handle wma_handle,
+					struct wow_pulse_mode *wow_pulse_cmd)
+{
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	wmi_buf_t buf;
+	WMI_WOW_HOSTWAKEUP_GPIO_CMD_FIXED_PARAM *cmd;
+	u_int16_t len;
+
+	len = sizeof(*cmd);
+	buf = wmi_buf_alloc(wma_handle->wmi_handle, len);
+	if (!buf) {
+		 WMA_LOGE("wmi_buf_alloc failed");
+		 return QDF_STATUS_E_NOMEM;
+	}
+
+	cmd = (WMI_WOW_HOSTWAKEUP_GPIO_CMD_FIXED_PARAM *)wmi_buf_data(buf);
+	qdf_mem_zero(cmd, len);
+
+	WMITLV_SET_HDR(&cmd->tlv_header,
+		WMITLV_TAG_HOSTWAKEUP_GPIO_CMD_FIXED_PARAM,
+		WMITLV_GET_STRUCT_TLVLEN(
+			WMI_WOW_HOSTWAKEUP_GPIO_CMD_FIXED_PARAM));
+
+	cmd->enable = wow_pulse_cmd->wow_pulse_enable;
+	cmd->pin = wow_pulse_cmd->wow_pulse_pin;
+	cmd->interval_low = wow_pulse_cmd->wow_pulse_interval_low;
+	cmd->interval_high = wow_pulse_cmd->wow_pulse_interval_high;
+	cmd->repeat_cnt = WMI_WOW_PULSE_REPEAT_CNT;
+
+	if (wmi_unified_cmd_send(wma_handle->wmi_handle, buf, len,
+		WMI_WOW_HOSTWAKEUP_GPIO_PIN_PATTERN_CONFIG_CMDID)) {
+		WMA_LOGE("Failed to send send wow pulse");
+		wmi_buf_free(buf);
+		status = QDF_STATUS_E_FAILURE;
+	}
+
+	WMA_LOGD("%s: Exit", __func__);
+	return status;
+}
+
+#undef WMI_WOW_HOSTWAKEUP_GPIO_CMD_FIXED_PARAM
+#undef WMITLV_TAG_HOSTWAKEUP_GPIO_CMD_FIXED_PARAM
+#undef WMI_WOW_PULSE_REPEAT_CNT
+
+#else
+static inline QDF_STATUS wma_send_wow_pulse_cmd(tp_wma_handle wma_handle,
+					struct wow_pulse_mode *wow_pulse_cmd)
+{
+	return QDF_STATUS_E_FAILURE;
+}
+#endif
+
+
+/**
+ * wma_process_power_debug_stats_req() - Process the Chip Power stats collect
+ * request and pass the Power stats request to Fw
+ * @wma_handle: WMA handle
+ *
+ * Return: QDF_STATUS
+ */
+#ifdef WLAN_POWER_DEBUGFS
+static QDF_STATUS wma_process_power_debug_stats_req(tp_wma_handle wma_handle)
+{
+	wmi_pdev_get_chip_power_stats_cmd_fixed_param *cmd;
+	int32_t len;
+	wmi_buf_t buf;
+	uint8_t *buf_ptr;
+	int ret;
+
+	if (!wma_handle) {
+		WMA_LOGE("%s: input pointer is NULL", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	len = sizeof(*cmd);
+	buf = wmi_buf_alloc(wma_handle->wmi_handle, len);
+	if (!buf) {
+		WMA_LOGE("%s: Failed allocate wmi buffer", __func__);
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	buf_ptr = (u_int8_t *) wmi_buf_data(buf);
+	cmd = (wmi_pdev_get_chip_power_stats_cmd_fixed_param *) buf_ptr;
+
+	WMITLV_SET_HDR(&cmd->tlv_header,
+		WMITLV_TAG_STRUC_wmi_get_chip_power_stats_cmd_fixed_param,
+		WMITLV_GET_STRUCT_TLVLEN(
+			wmi_pdev_get_chip_power_stats_cmd_fixed_param));
+	cmd->pdev_id = 0;
+
+	WMA_LOGD("POWER_DEBUG_STATS - Get Request Params; Pdev id - %d",
+			cmd->pdev_id);
+	ret = wmi_unified_cmd_send(wma_handle->wmi_handle, buf, len,
+			WMI_PDEV_GET_CHIP_POWER_STATS_CMDID);
+	if (ret) {
+		WMA_LOGE("%s: Failed to send power debug stats request",
+				__func__);
+		wmi_buf_free(buf);
+		return QDF_STATUS_E_FAILURE;
+	}
+	return QDF_STATUS_SUCCESS;
+}
+#else
+static QDF_STATUS wma_process_power_debug_stats_req(tp_wma_handle wma_handle)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
 
 /**
  * wma_mc_process_msg() - process wma messages and call appropriate function.
@@ -6748,6 +6914,12 @@ QDF_STATUS wma_mc_process_msg(void *cds_context, cds_msg_t *msg)
 	case WMA_SET_RSSI_MONITOR_REQ:
 		wma_set_rssi_monitoring(wma_handle,
 			(struct rssi_monitor_req *)msg->bodyptr);
+		qdf_mem_free(msg->bodyptr);
+		break;
+	case WDA_SET_UDP_RESP_OFFLOAD:
+		wma_send_udp_resp_offload_cmd(wma_handle,
+			(struct udp_resp_offload *)msg->bodyptr);
+		qdf_mem_free(msg->bodyptr);
 		break;
 	case WMA_FW_MEM_DUMP_REQ:
 		wma_process_fw_mem_dump_req(wma_handle,
@@ -6906,8 +7078,16 @@ QDF_STATUS wma_mc_process_msg(void *cds_context, cds_msg_t *msg)
 		wma_update_short_retry_limit(wma_handle, msg->bodyptr);
 		qdf_mem_free(msg->bodyptr);
 		break;
+	case SIR_HAL_POWER_DEBUG_STATS_REQ:
+		wma_process_power_debug_stats_req(wma_handle);
+		break;
+	case WMA_SET_WOW_PULSE_CMD:
+		wma_send_wow_pulse_cmd(wma_handle,
+			(struct wow_pulse_mode *)msg->bodyptr);
+		qdf_mem_free(msg->bodyptr);
+		break;
 	default:
-		WMA_LOGD("unknow msg type %x", msg->type);
+		WMA_LOGD("unknown msg type %x", msg->type);
 		/* Do Nothing? MSG Body should be freed at here */
 		if (NULL != msg->bodyptr) {
 			qdf_mem_free(msg->bodyptr);

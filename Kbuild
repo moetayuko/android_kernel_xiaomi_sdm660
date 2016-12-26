@@ -80,6 +80,11 @@ ifeq ($(KERNEL_BUILD), 0)
 	#Flag to enable Legacy Fast Roaming3(LFR3)
 	CONFIG_QCACLD_WLAN_LFR3 := y
 
+	#Enable Power debugfs feature only if debug_fs is enabled
+	ifeq ($(CONFIG_DEBUG_FS), y)
+	CONFIG_WLAN_POWER_DEBUGFS := y
+	endif
+
 	# JB kernel has CPU enablement patches, so enable
 	ifeq ($(CONFIG_ROME_IF),pci)
 		CONFIG_PRIMA_WLAN_11AC_HIGH_TP := y
@@ -125,6 +130,11 @@ ifeq ($(KERNEL_BUILD), 0)
 	endif
 	ifeq ($(CONFIG_ROME_IF),sdio)
 		CONFIG_WLAN_FEATURE_11W := y
+	endif
+
+	#Flag to enable the tx desc sanity check
+	ifeq ($(CONFIG_ROME_IF),usb)
+		CONFIG_QCA_TXDESC_SANITY_CHECKS := y
 	endif
 
 	ifneq ($(CONFIG_MOBILE_ROUTER), y)
@@ -1174,6 +1184,7 @@ endif
 ifeq ($(CONFIG_SLUB_DEBUG_ON),y)
 CDEFINES += -DTIMER_MANAGER
 CDEFINES += -DMEMORY_DEBUG
+CDEFINES += -DWLAN_SUSPEND_RESUME_TEST
 endif
 
 ifeq ($(HAVE_CFG80211),1)
@@ -1204,6 +1215,10 @@ ifeq ($(CONFIG_QCACLD_WLAN_LFR2),y)
 CDEFINES += -DWLAN_FEATURE_HOST_ROAM
 endif
 
+ifeq ($(CONFIG_WLAN_POWER_DEBUGFS), y)
+CDEFINES += -DWLAN_POWER_DEBUGFS
+endif
+
 ifeq ($(BUILD_DIAG_VERSION),1)
 CDEFINES += -DFEATURE_WLAN_DIAG_SUPPORT
 CDEFINES += -DFEATURE_WLAN_DIAG_SUPPORT_CSR
@@ -1221,6 +1236,10 @@ endif
 
 ifeq ($(CONFIG_WLAN_FEATURE_11W),y)
 CDEFINES += -DWLAN_FEATURE_11W
+endif
+
+ifeq ($(CONFIG_QCA_TXDESC_SANITY_CHECKS), 1)
+CDEFINES += -DQCA_SUPPORT_TXDESC_SANITY_CHECKS
 endif
 
 ifeq ($(CONFIG_QCOM_LTE_COEX),y)
@@ -1399,10 +1418,6 @@ ifeq ($(CONFIG_SMP),y)
 CDEFINES += -DQCA_CONFIG_SMP
 endif
 
-ifeq ($(CONFIG_WLAN_FEATURE_RX_WAKELOCK), y)
-CDEFINES += -DWLAN_FEATURE_HOLD_RX_WAKELOCK
-endif
-
 #Enable Channel Matrix restriction for all Rome only targets
 ifneq (y,$(filter y,$(CONFIG_CNSS_EOS) $(CONFIG_ICNSS)))
 CDEFINES += -DWLAN_ENABLE_CHNL_MATRIX_RESTRICTION
@@ -1571,6 +1586,7 @@ KBUILD_CPPFLAGS += $(CDEFINES)
 ifeq ($(call cc-option-yn, -Wmaybe-uninitialized),y)
 EXTRA_CFLAGS += -Wmaybe-uninitialized
 endif
+EXTRA_CFLAGS += -Wmissing-prototypes
 
 # If the module name is not "wlan", then the define MULTI_IF_NAME to be the
 # same a the module name. The host driver will then append MULTI_IF_NAME to

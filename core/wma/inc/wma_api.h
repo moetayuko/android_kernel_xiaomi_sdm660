@@ -142,9 +142,9 @@ QDF_STATUS wma_set_reg_domain(void *clientCtxt, v_REGDOMAIN_t regId);
 QDF_STATUS wma_get_wcnss_software_version(void *p_cds_gctx,
 					  uint8_t *pVersion,
 					  uint32_t versionBufferSize);
-int wma_runtime_suspend(void);
+int wma_runtime_suspend(uint32_t wow_flags);
 int wma_runtime_resume(void);
-int wma_bus_suspend(void);
+int wma_bus_suspend(uint32_t wow_flags);
 int wma_is_target_wake_up_received(void);
 int wma_clear_target_wake_up(void);
 QDF_STATUS wma_suspend_target(WMA_HANDLE handle, int disable_target_intr);
@@ -155,8 +155,8 @@ QDF_STATUS wma_resume_target(WMA_HANDLE handle);
 QDF_STATUS wma_disable_wow_in_fw(WMA_HANDLE handle);
 QDF_STATUS wma_disable_d0wow_in_fw(WMA_HANDLE handle);
 bool wma_is_wow_mode_selected(WMA_HANDLE handle);
-QDF_STATUS wma_enable_wow_in_fw(WMA_HANDLE handle);
-QDF_STATUS wma_enable_d0wow_in_fw(WMA_HANDLE handle);
+QDF_STATUS wma_enable_wow_in_fw(WMA_HANDLE handle, uint32_t wow_flags);
+QDF_STATUS wma_enable_d0wow_in_fw(WMA_HANDLE handle, uint32_t wow_flags);
 bool wma_check_scan_in_progress(WMA_HANDLE handle);
 void wma_set_peer_authorized_cb(void *wma_ctx, wma_peer_authorized_fp auth_cb);
 QDF_STATUS wma_set_peer_param(void *wma_ctx, uint8_t *peer_addr,
@@ -325,7 +325,17 @@ QDF_STATUS wma_set_cts2self_for_p2p_go(void *wma_handle,
 		uint32_t cts2self_for_p2p_go);
 QDF_STATUS wma_set_tx_rx_aggregation_size
 	(struct sir_set_tx_rx_aggregation_size *tx_rx_aggregation_size);
-
+/**
+ * wma_set_sar_limit() - set sar limits in the target
+ * @handle: wma handle
+ * @sar_limit_cmd_params: sar limit cmd params
+ *
+ *  This function sends WMI command to set SAR limits.
+ *
+ *  Return: QDF_STATUS enumeration
+ */
+QDF_STATUS wma_set_sar_limit(WMA_HANDLE handle,
+		struct sar_limit_cmd_params *sar_limit_params);
 /**
  * wma_set_qpower_config() - update qpower config in wma
  * @vdev_id:	the Id of the vdev to configure
