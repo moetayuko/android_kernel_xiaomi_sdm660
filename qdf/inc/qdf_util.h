@@ -41,6 +41,9 @@
 #define QDF_MAX_AVAILABLE_CPU	1
 #endif
 
+#define DMA_COHERENT_MASK_IPA_VER_3_AND_ABOVE   37
+#define DMA_COHERENT_MASK_BELOW_IPA_VER_3       32
+
 /**
  * qdf_unlikely - Compiler-dependent macro denoting code likely to execute
  * @_expr: expression to be checked
@@ -496,6 +499,34 @@ bool qdf_is_group_addr(uint8_t *mac_addr)
 		return true;
 	else
 		return false;
+}
+
+/**
+ * qdf_get_ipa_hw_type() - get IPA hw type
+ *
+ * This API return the IPA hw type.
+ *
+ * Return: IPA hw type
+ */
+static inline
+enum ipa_hw_type qdf_get_ipa_hw_type(void)
+{
+	return __qdf_get_ipa_hw_type();
+}
+
+/**
+ * qdf_set_dma_coherent_mask() - set max number of bits allowed in dma addr
+ * @dev: device pointer
+ * @addr_bits: max number of bits allowed in dma address
+ *
+ * This API sets the maximum allowed number of bits in the dma address.
+ *
+ * Return: 0 - success, non zero - failure
+ */
+static inline
+int qdf_set_dma_coherent_mask(struct device *dev, uint8_t addr_bits)
+{
+	return __qdf_set_dma_coherent_mask(dev, addr_bits);
 }
 
 #endif /*_QDF_UTIL_H*/
