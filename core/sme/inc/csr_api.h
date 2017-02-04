@@ -293,6 +293,10 @@ typedef struct tagCsrScanRequest {
 	bool bcnRptReqScan;     /* is Scan issued by Beacon Report Request */
 	uint32_t scan_id;
 	uint32_t timestamp;
+
+	bool enable_scan_randomization;
+	uint8_t mac_addr[QDF_MAC_ADDR_SIZE];
+	uint8_t mac_addr_mask[QDF_MAC_ADDR_SIZE];
 } tCsrScanRequest;
 
 typedef struct tagCsrScanResultInfo {
@@ -1246,7 +1250,7 @@ typedef struct tagCsrConfigParam {
 	uint8_t scanCfgAgingTime;
 	uint8_t enableTxLdpc;
 	uint8_t enableRxLDPC;
-	uint8_t isAmsduSupportInAMPDU;
+	uint8_t max_amsdu_num;
 	uint8_t nSelect5GHzMargin;
 	uint8_t isCoalesingInIBSSAllowed;
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH

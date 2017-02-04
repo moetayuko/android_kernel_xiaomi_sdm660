@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -1325,6 +1325,15 @@ static QDF_STATUS lim_send_hal_start_scan_offload_req(tpAniSirGlobal pMac,
 		     (uint8_t *) pScanReq + pScanReq->uIEFieldOffset,
 		     pScanReq->uIEFieldLen);
 
+	pScanOffloadReq->enable_scan_randomization =
+					pScanReq->enable_scan_randomization;
+	if (pScanOffloadReq->enable_scan_randomization) {
+		qdf_mem_copy(pScanOffloadReq->mac_addr, pScanReq->mac_addr,
+			     QDF_MAC_ADDR_SIZE);
+		qdf_mem_copy(pScanOffloadReq->mac_addr_mask,
+			     pScanReq->mac_addr_mask, QDF_MAC_ADDR_SIZE);
+	}
+
 	rc = wma_post_ctrl_msg(pMac, &msg);
 	if (rc != eSIR_SUCCESS) {
 		lim_log(pMac, LOGE, FL("wma_post_ctrl_msg() return failure"));
@@ -1606,8 +1615,7 @@ __lim_process_sme_join_req(tpAniSirGlobal mac_ctx, uint32_t *msg_buf)
 					FL("SessionId:%d New session created"),
 					session_id);
 		}
-		session->isAmsduSupportInAMPDU =
-			sme_join_req->isAmsduSupportInAMPDU;
+		session->max_amsdu_num = sme_join_req->max_amsdu_num;
 
 		/*
 		 * Store Session related parameters

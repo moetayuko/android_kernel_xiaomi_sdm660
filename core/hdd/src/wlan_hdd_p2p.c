@@ -52,6 +52,7 @@
 #include "qdf_trace.h"
 #include "cds_sched.h"
 #include "cds_concurrency.h"
+#include "cds_utils.h"
 
 /* Ms to Time Unit Micro Sec */
 #define MS_TO_TU_MUS(x)   ((x) * 1024)
@@ -526,7 +527,7 @@ static void wlan_hdd_remain_on_chan_timeout(void *data)
 			pRemainChanCtx->scan_id);
 	}
 
-	hdd_restart_tdls_source_timer(hdd_ctx, eTDLS_SUPPORT_ENABLED);
+	hdd_restart_tdls_source_timer(hdd_ctx, hdd_ctx->tdls_mode_last);
 	qdf_runtime_pm_allow_suspend(hdd_ctx->runtime_context.roc);
 	hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_ROC);
 }
@@ -2058,7 +2059,8 @@ struct wireless_dev *__wlan_hdd_add_virtual_intf(struct wiphy *wiphy,
 		scan_info = &pAdapter->scan_info;
 		if (scan_info->mScanPending) {
 			hdd_abort_mac_scan(pHddCtx, pAdapter->sessionId,
-						eCSR_SCAN_ABORT_DEFAULT);
+					   INVALID_SCAN_ID,
+					   eCSR_SCAN_ABORT_DEFAULT);
 			hdd_notice("Abort Scan while adding virtual interface");
 		}
 	}

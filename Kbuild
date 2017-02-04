@@ -109,6 +109,14 @@ ifeq ($(KERNEL_BUILD), 0)
 	CONFIG_QCACLD_FEATURE_METERING := y
 	endif
 
+	ifeq ($(CONFIG_ARCH_SDM660), y)
+	CONFIG_QCACLD_FEATURE_METERING := y
+	endif
+
+	ifeq ($(CONFIG_ARCH_SDM630), y)
+	CONFIG_QCACLD_FEATURE_METERING := y
+	endif
+
 	#Flag to enable Fast Transition (11r) feature
 	CONFIG_QCOM_VOWIFI_11R := y
 
@@ -1611,6 +1619,10 @@ ifeq ($(call cc-option-yn, -Wmaybe-uninitialized),y)
 EXTRA_CFLAGS += -Wmaybe-uninitialized
 endif
 EXTRA_CFLAGS += -Wmissing-prototypes
+
+ifeq ($(call cc-option-yn, -Wheader-guard),y)
+EXTRA_CFLAGS += -Wheader-guard
+endif
 
 # If the module name is not "wlan", then the define MULTI_IF_NAME to be the
 # same a the module name. The host driver will then append MULTI_IF_NAME to

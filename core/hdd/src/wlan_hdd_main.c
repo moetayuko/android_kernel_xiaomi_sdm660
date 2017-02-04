@@ -106,6 +106,8 @@
 #include <wlan_hdd_napi.h>
 #include "wlan_hdd_disa.h"
 #include "ol_txrx.h"
+#include "cds_utils.h"
+
 #ifdef MODULE
 #define WLAN_MODULE_NAME  module_name(THIS_MODULE)
 #else
@@ -192,7 +194,7 @@ static const struct wiphy_wowlan_support wowlan_support_reg_init = {
 /* internal function declaration */
 
 struct sock *cesium_nl_srv_sock;
-
+struct completion wlan_start_comp;
 #ifdef FEATURE_WLAN_AUTO_SHUTDOWN
 void wlan_hdd_auto_shutdown_cb(void);
 #endif
@@ -413,6 +415,7 @@ static int __hdd_netdev_notifier_call(struct notifier_block *nb,
 					abortscan_event_var);
 			hdd_abort_mac_scan(adapter->pHddCtx,
 					   adapter->sessionId,
+					   INVALID_SCAN_ID,
 					   eCSR_SCAN_ABORT_DEFAULT);
 			rc = wait_for_completion_timeout(
 				&adapter->scan_info.abortscan_event_var,
@@ -792,7 +795,7 @@ static void hdd_update_vdev_nss(hdd_context_t *hdd_ctx)
 	struct hdd_config *cfg_ini = hdd_ctx->config;
 	uint8_t max_supp_nss = 1;
 
-	if (cfg_ini->enable2x2)
+	if (cfg_ini->enable2x2 && !cds_is_sub_20_mhz_enabled())
 		max_supp_nss = 2;
 
 	sme_update_vdev_type_nss(hdd_ctx->hHal, max_supp_nss,
@@ -1405,6 +1408,7 @@ void hdd_update_tgt_cfg(void *context, void *param)
 		cfg->bpf_enabled, hdd_ctx->config->bpf_packet_filter_enable);
 	hdd_ctx->bpf_enabled = (cfg->bpf_enabled &&
 				hdd_ctx->config->bpf_packet_filter_enable);
+	hdd_ctx->rcpi_enabled = cfg->rcpi_enabled;
 	hdd_update_ra_rate_limit(hdd_ctx, cfg);
 
 	hdd_ctx->fw_mem_dump_enabled = cfg->fw_mem_dump_enabled;
@@ -2718,6 +2722,9 @@ QDF_STATUS hdd_init_station_mode(hdd_adapter_t *adapter)
 	if (status != QDF_STATUS_SUCCESS)
 		goto error_lro_enable;
 
+	/* rcpi info initialization */
+	qdf_mem_zero(&adapter->rcpi, sizeof(adapter->rcpi));
+
 	return QDF_STATUS_SUCCESS;
 
 error_lro_enable:
@@ -3121,6 +3128,17 @@ int hdd_set_fw_params(hdd_adapter_t *adapter)
 					  VDEV_CMD);
 		if (ret) {
 			hdd_err("FAILED TO SET RTSCTS Profile ret:%d", ret);
+			goto error;
+		}
+
+		hdd_info("SET AMSDU num %d", hdd_ctx->config->max_amsdu_num);
+
+		ret = wma_cli_set_command(adapter->sessionId,
+					  GEN_VDEV_PARAM_AMSDU,
+					  hdd_ctx->config->max_amsdu_num,
+					  GEN_CMD);
+		if (ret != 0) {
+			hdd_err("GEN_VDEV_PARAM_AMSDU set failed %d", ret);
 			goto error;
 		}
 	}
@@ -4380,6 +4398,7 @@ QDF_STATUS hdd_abort_mac_scan_all_adapters(hdd_context_t *hdd_ctx)
 		    (adapter->device_mode == QDF_SAP_MODE) ||
 		    (adapter->device_mode == QDF_P2P_GO_MODE)) {
 			hdd_abort_mac_scan(hdd_ctx, adapter->sessionId,
+					   INVALID_SCAN_ID,
 					   eCSR_SCAN_ABORT_DEFAULT);
 		}
 		status = hdd_get_next_adapter(hdd_ctx, adapterNode, &pNext);
@@ -7060,6 +7079,9 @@ static int hdd_update_cds_config(hdd_context_t *hdd_ctx)
 	if (hdd_ctx->config->ssdp)
 		cds_cfg->ssdp = hdd_ctx->config->ssdp;
 
+	cds_cfg->force_target_assert_enabled =
+		hdd_ctx->config->crash_inject_enabled;
+
 	cds_cfg->enable_mc_list = hdd_ctx->config->fEnableMCAddrList;
 	cds_cfg->ap_maxoffload_peers = hdd_ctx->config->apMaxOffloadPeers;
 
@@ -7904,8 +7926,11 @@ int hdd_configure_cds(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter)
 		goto hdd_features_deinit;
 	}
 
-	dp_cbacks.hdd_en_lro_in_cc_cb = hdd_enable_lro_in_concurrency;
-	dp_cbacks.hdd_disble_lro_in_cc_cb = hdd_disable_lro_in_concurrency;
+	if (hdd_ctx->config->lro_enable) {
+		dp_cbacks.hdd_en_lro_in_cc_cb = hdd_enable_lro_in_concurrency;
+		dp_cbacks.hdd_disble_lro_in_cc_cb =
+						hdd_disable_lro_in_concurrency;
+	}
 	dp_cbacks.ol_txrx_update_mac_id_cb = ol_txrx_update_mac_id;
 	if (cds_register_dp_cb(&dp_cbacks) != QDF_STATUS_SUCCESS)
 		hdd_err("Unable to register datapath callbacks in CDS");
@@ -8341,6 +8366,7 @@ int hdd_wlan_startup(struct device *dev)
 		if (!QDF_IS_STATUS_SUCCESS(status))
 			hdd_err("Failed to disable Chan Avoidance Indication");
 	}
+	complete(&wlan_start_comp);
 	goto success;
 
 err_debugfs_exit:
@@ -8752,7 +8778,6 @@ void wlan_hdd_send_svc_nlink_msg(int radio, int type, void *data, int len)
 	case WLAN_SVC_WLAN_AUTO_SHUTDOWN_CANCEL_IND:
 		ani_hdr->length = 0;
 		nlh->nlmsg_len = NLMSG_LENGTH((sizeof(tAniMsgHdr)));
-		skb_put(skb, NLMSG_SPACE(sizeof(tAniMsgHdr)));
 		break;
 	case WLAN_SVC_WLAN_STATUS_IND:
 	case WLAN_SVC_WLAN_VERSION_IND:
@@ -8767,7 +8792,6 @@ void wlan_hdd_send_svc_nlink_msg(int radio, int type, void *data, int len)
 		nlh->nlmsg_len = NLMSG_LENGTH((sizeof(tAniMsgHdr) + len));
 		nl_data = (char *)ani_hdr + sizeof(tAniMsgHdr);
 		memcpy(nl_data, data, len);
-		skb_put(skb, NLMSG_SPACE(sizeof(tAniMsgHdr) + len));
 		break;
 
 	default:
@@ -9302,11 +9326,7 @@ void hdd_deinit(void)
 #endif
 }
 
-#ifdef QCA_WIFI_3_0_ADRASTEA
-#define HDD_WLAN_START_WAIT_TIME (3600 * 1000)
-#else
 #define HDD_WLAN_START_WAIT_TIME (CDS_WMA_TIMEOUT + 5000)
-#endif
 
 /**
  * __hdd_module_init - Module init helper
@@ -9318,6 +9338,7 @@ void hdd_deinit(void)
 static int __hdd_module_init(void)
 {
 	int ret = 0;
+	unsigned long rc;
 
 	pr_err("%s: Loading driver v%s\n", WLAN_MODULE_NAME,
 		QWLAN_VERSIONSTR TIMER_MANAGER_STR MEMORY_DEBUG_STR);
@@ -9334,10 +9355,20 @@ static int __hdd_module_init(void)
 
 	hdd_set_conparam((uint32_t) con_mode);
 
+	init_completion(&wlan_start_comp);
 	ret = wlan_hdd_register_driver();
 	if (ret) {
 		pr_err("%s: driver load failure, err %d\n", WLAN_MODULE_NAME,
 			ret);
+		goto out;
+	}
+
+	rc = wait_for_completion_timeout(&wlan_start_comp,
+				msecs_to_jiffies(HDD_WLAN_START_WAIT_TIME));
+
+	if (!rc) {
+		hdd_alert("Timed-out waiting for wlan_hdd_register_driver");
+		QDF_BUG(0);
 		goto out;
 	}
 
