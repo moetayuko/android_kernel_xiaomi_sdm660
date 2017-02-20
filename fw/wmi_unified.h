@@ -356,6 +356,8 @@ typedef enum {
     WMI_PDEV_GET_CHIP_POWER_STATS_CMDID,
     /** set stats reporting thresholds - see WMI_REPORT_STATS_EVENTID */
     WMI_PDEV_SET_STATS_THRESHOLD_CMDID,
+    /** vdev restart request for multiple vdevs */
+    WMI_PDEV_MULTIPLE_VDEV_RESTART_REQUEST_CMDID,
 
     /* VDEV (virtual device) specific commands */
     /** vdev create */
@@ -462,7 +464,8 @@ typedef enum {
     WMI_PEER_SET_RX_BLOCKSIZE_CMDID,
     /** request peer antdiv info from FW. FW shall respond with PEER_ANTDIV_INFO_EVENTID */
     WMI_PEER_ANTDIV_INFO_REQ_CMDID,
-
+    /** Peer operating mode change indication sent to host to update stats */
+    WMI_PEER_OPER_MODE_CHANGE_EVENTID,
 
     /* beacon/management specific commands */
 
@@ -1089,6 +1092,11 @@ typedef enum {
     WMI_PDEV_ANTDIV_STATUS_EVENTID,
     /** Chip level Power stats */
     WMI_PDEV_CHIP_POWER_STATS_EVENTID,
+    /** Power Save Failure Detected */
+    WMI_PDEV_CHIP_POWER_SAVE_FAILURE_DETECTED_EVENTID,
+
+    /* Event to report the switch count in csa of one or more VDEVs */
+    WMI_PDEV_CSA_SWITCH_COUNT_STATUS_EVENTID,
 
     /* VDEV specific events */
     /** VDEV started event in response to VDEV_START request */
@@ -6671,6 +6679,14 @@ typedef struct {
     A_UINT32 tim_ie_offset;
     /** beacon buffer length. data is in TLV data[] */
     A_UINT32 buf_len;
+    /** CSA IE switch count offset from the beginning of data[]
+     *  Value 0 indicates CSA IE is not present in beacon template.
+     */
+    A_UINT32 csa_switch_count_offset; /* units = bytes */
+    /** Extended CSA IE switch count offset from the beginning of data[]
+     *  Value 0 indicates CSA IE is not present in beacon template.
+     */
+    A_UINT32 ext_csa_switch_count_offset; /* units = bytes */
 
 /*
  * The TLVs follows:
@@ -8082,6 +8098,10 @@ typedef struct {
  *  and to look for a matching AP profile from a list of
  *  configured profiles. */
 
+/* flags for roam_scan_mode_cmd
+ * indicate the status (success/fail) of wmi_roam_scan_mode cmd through WMI_ROAM_EVENTID */
+#define WMI_ROAM_SCAN_MODE_FLAG_REPORT_STATUS  0x1
+
 /**
  * WMI_ROAM_SCAN_MODE: Set Roam Scan mode
  *   the roam scan mode is one of the periodic, rssi change, both, none.
@@ -8096,6 +8116,7 @@ typedef struct {
     A_UINT32 tlv_header; /** TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_roam_scan_mode_fixed_param */
     A_UINT32 roam_scan_mode;
     A_UINT32 vdev_id;
+    A_UINT32 flags; /* see WMI_ROAM_SCAN_MODE_FLAG defs */
 } wmi_roam_scan_mode_fixed_param;
 
 #define WMI_ROAM_SCAN_MODE_NONE        0x0
@@ -8533,6 +8554,7 @@ typedef struct {
  * WMI_ROAM_REASON_HO_FAILED no matter WMI_ROAM_INVOKE_CMDID is called or not.
  */
 #define WMI_ROAM_REASON_INVOKE_ROAM_FAIL 0x6
+#define WMI_ROAM_REASON_RSO_STATUS       0x7
 /* reserved up through 0xF */
 
 /* subnet status: bits 4-5 */
@@ -8558,9 +8580,12 @@ typedef enum
      WMI_ROAM_SUBNET_CHANGE_STATUS_SHIFT)
 
 /* roaming notification */
-#define WMI_ROAM_NOTIF_INVALID     0x0  /** invalid notification. Do not interpret notif field  */
-#define WMI_ROAM_NOTIF_ROAM_START  0x1  /** indicate that roaming is started. sent only in non WOW state */
-#define WMI_ROAM_NOTIF_ROAM_ABORT  0x2  /** indicate that roaming is aborted. sent only in non WOW state */
+#define WMI_ROAM_NOTIF_INVALID           0x0 /** invalid notification. Do not interpret notif field  */
+#define WMI_ROAM_NOTIF_ROAM_START        0x1 /** indicate that roaming is started. sent only in non WOW state */
+#define WMI_ROAM_NOTIF_ROAM_ABORT        0x2 /** indicate that roaming is aborted. sent only in non WOW state */
+#define WMI_ROAM_NOTIF_ROAM_REASSOC      0x3 /** indicate that reassociation is done. sent only in non WOW state */
+#define WMI_ROAM_NOTIF_SCAN_MODE_SUCCESS 0x4 /** indicate that roaming scan mode is successful */
+#define WMI_ROAM_NOTIF_SCAN_MODE_FAIL    0x5 /** indicate that roaming scan mode is failed due to internal roaming state */
 
 /**whenever RIC request information change, host driver should pass all ric related information to firmware (now only support tsepc)
 * Once, 11r roaming happens, firmware can generate RIC request in reassoc request based on these informations
@@ -9123,6 +9148,7 @@ typedef enum event_type_e {
     WOW_OEM_RESPONSE_EVENT = WOW_NAN_RTT_EVENT, /* reuse deprecated event value */
     WOW_TDLS_CONN_TRACKER_EVENT,
     WOW_CRITICAL_LOG_EVENT,
+    WOW_CHIP_POWER_FAILURE_DETECT_EVENT,
 } WOW_WAKE_EVENT_TYPE;
 
 typedef enum wake_reason_e {
@@ -9174,6 +9200,7 @@ typedef enum wake_reason_e {
     WOW_REASON_CRITICAL_LOG,
     WOW_REASON_P2P_LISTEN_OFFLOAD,
     WOW_REASON_NAN_EVENT_WAKE_HOST,
+    WOW_REASON_CHIP_POWER_FAILURE_DETECT,
     WOW_REASON_DEBUG_TEST = 0xFF,
 } WOW_WAKE_REASON_TYPE;
 
@@ -10030,6 +10057,14 @@ typedef struct enlo_candidate_score_params_t {
     A_UINT32 band5GHz_bonus; /* 5GHz RSSI score bonus (applied to all 5GHz networks) */
 } enlo_candidate_score_params;
 
+typedef struct connected_nlo_bss_band_rssi_pref_t {
+    A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_connected_nlo_bss_band_rssi_pref */
+    /** band which needs to get preference over other band - see wmi_set_vdev_ie_band enum */
+    A_UINT32 band;
+    /* Amount of RSSI preference (in dB) that can be given to band (mentioned above) over other band */
+    A_INT32  rssi_pref;
+} connected_nlo_bss_band_rssi_pref;
+
 typedef struct connected_nlo_rssi_params_t {
     A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_connected_nlo_rssi_params */
     /* Relative rssi threshold (in dB) by which new BSS should have better rssi than
@@ -10064,13 +10099,16 @@ typedef struct wmi_nlo_config {
     A_UINT32 ie_bitmap[WMI_IE_BITMAP_SIZE];
     /** Number of vendor OUIs. In the TLV vendor_oui[] **/
     A_UINT32 num_vendor_oui;
+    /** Number of connected NLO band preferences **/
+    A_UINT32 num_cnlo_band_pref;
 /* The TLVs will follow.
  * nlo_configured_parameters nlo_list[];
- * A_UINT32 channel_list[];
+ * A_UINT32 channel_list[num_of_channels];
  * nlo_channel_prediction_cfg ch_prediction_cfg;
  * enlo_candidate_score_params candidate_score_params;
- * wmi_vendor_oui vendor_oui[];
+ * wmi_vendor_oui vendor_oui[num_vendor_oui];
  * connected_nlo_rssi_params cnlo_rssi_params;
+ * connected_nlo_bss_band_rssi_pref cnlo_bss_band_rssi_pref[num_cnlo_band_pref];
  */
 } wmi_nlo_config_cmd_fixed_param;
 
@@ -10646,7 +10684,10 @@ typedef struct {
     A_UINT32 cwmin;
     A_UINT32 cwmax;
     A_UINT32 aifs;
-    A_UINT32 txoplimit;
+    union {
+        A_UINT32 txoplimit;
+        A_UINT32 mu_edca_timer;
+    };
     A_UINT32 acm;
     A_UINT32 no_ack;
 } wmi_wmm_vparams;
@@ -11425,6 +11466,7 @@ typedef struct
 #define LPI_IE_BITMAP_CHRE_ESS               0x010000000    /* ESS capability info for CHRE */
 #define LPI_IE_BITMAP_CHRE_SEC_MODE          0x020000000    /* Security capability info for CHRE */
 #define LPI_IE_BITMAP_CHRE_SUPPORTED_RATE    0x040000000    /* Hightest MCS corresponding NCC for TX and RX */
+#define LPI_IE_BITMAP_COUNTRY_STRING         0x080000000    /* send country string inside Country IE to LOWI LP */
 #define LPI_IE_BITMAP_ALL                    0xFFFFFFFF
 
 typedef struct {
@@ -11775,6 +11817,35 @@ typedef struct {
      */
     A_INT32 chain_rssi[8];
 } wmi_peer_antdiv_info;
+
+typedef enum {
+    WMI_PEER_IND_SMPS = 0x0, /* spatial multiplexing power save */
+    WMI_PEER_IND_OMN,        /* operating mode notification */
+    WMI_PEER_IND_OMI,        /* operating mode indication */
+} WMI_PEER_OPER_MODE_IND;
+
+typedef struct {
+    /** TLV tag and len; tag equals
+     *  WMITLV_TAG_STRUC_wmi_peer_oper_mode_change */
+    A_UINT32 tlv_header;
+    /** mac addr of the peer */
+    wmi_mac_addr peer_mac_address;
+    /** Peer type indication WMI_PEER_OPER_MODE_IND. */
+    A_UINT32 ind_type;
+    /** new_rxnss valid for all peer_operating mode ind. */
+    A_UINT32 new_rxnss;
+    /** new_bw  valid for peer_operating mode ind. OMN/OMI
+     *  value of this bw is as per 11ax/ac standard:
+     *  0 = 20MHz,1 = 40MHz, 2= 80MHz, 3 = 160MHz
+     */
+    A_UINT32 new_bw;
+    /** new_txnss valid for peer_operating mode ind. OMI */
+    A_UINT32 new_txnss;
+    /** new_disablemu: disable mu mode
+     *  valid for peer_operating mode ind. OMI
+     */
+    A_UINT32 new_disablemu;
+} wmi_peer_oper_mode_change_event_fixed_param;
 
 /** FW response when tx failure count has reached threshold
  *  for a peer */
@@ -16588,6 +16659,18 @@ typedef struct {
      */
 } wmi_pdev_chip_power_stats_event_fixed_param;
 
+typedef enum wmi_chip_power_save_failure_reason_code_type {
+    WMI_PROTOCOL_POWER_SAVE_FAILURE_REASON,
+    WMI_HW_POWER_SAVE_FAILURE_REASON,
+    WMI_POWER_SAVE_FAILURE_REASON_MAX = 0xf,
+} WMI_POWER_SAVE_FAILURE_REASON_TYPE;
+
+typedef struct {
+    A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_chip_power_save_failure_detected_fixed_param */
+    A_UINT32 power_save_failure_reason_code; /* Chip power save failuire reason as defined in WMI_POWER_SAVE_FAILURE_REASON_TYPE */
+    A_UINT32 protocol_wake_lock_bitmap[4]; /* bitmap with bits set for modules (from WLAN_MODULE_ID enum) voting against sleep for prolonged duration */
+} wmi_chip_power_save_failure_detected_fixed_param;
+
 typedef struct {
     A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_ani_ofdm_event_fixed_param */
     A_UINT32 ofdm_level;
@@ -17616,6 +17699,7 @@ static INLINE A_UINT8 *wmi_id_to_name(A_UINT32 wmi_command)
         WMI_RETURN_STRING(WMI_VDEV_ADD_MAC_ADDR_TO_RX_FILTER_CMDID);
         WMI_RETURN_STRING(WMI_BPF_SET_VDEV_ACTIVE_MODE_CMDID);
         WMI_RETURN_STRING(WMI_HW_DATA_FILTER_CMDID);
+        WMI_RETURN_STRING(MI_PDEV_MULTIPLE_VDEV_RESTART_REQUEST_CMDID);
     }
 
     return "Invalid WMI cmd";
@@ -17812,6 +17896,51 @@ typedef struct {
     A_UINT32 enable;  /* 1 . enable, 0- disable */
     A_UINT32 hw_filter_bitmap; /* see WMI_HW_DATA_FILTER_BITMAP_TYPE */
 } wmi_hw_data_filter_cmd_fixed_param;
+
+/* This command is used whenever host wants to restart multiple
+ * VDEVs using single command and the VDEV that are restarted will
+ * need to have same properties they had before restart except for the
+ * operating channel
+ */
+typedef struct {
+    A_UINT32 tlv_header; /** TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_pdev_multiple_vdev_restart_request_cmd_fixed_param */
+    /** pdev_id for identifying the MAC
+     * See macros starting with WMI_PDEV_ID_ for values.
+     * In non-DBDC case host should set it to 0
+     */
+    A_UINT32 pdev_id;
+    /** unique id identifying the module, generated by the caller */
+    A_UINT32 requestor_id;
+    /** Disable H/W ack.
+     * During CAC, Our HW shouldn't ack directed frames
+     */
+    A_UINT32 disable_hw_ack;
+    /* Determine the duration of CAC on the given channel 'chan' */
+    A_UINT32 cac_duration_ms;
+    A_UINT32 num_vdevs;
+
+    /* The TLVs follows this structure:
+     * A_UINT32 vdev_ids[]; <--- Array of VDEV ids.
+     * wmi_channel chan; <------ WMI channel
+     */
+} wmi_pdev_multiple_vdev_restart_request_cmd_fixed_param;
+
+typedef struct {
+    /** TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_pdev_csa_switch_count_status_event_fixed_param */
+    A_UINT32 tlv_header;
+    /** pdev_id for identifying the MAC
+     * See macros starting with WMI_PDEV_ID_ for values.
+     * In non-DBDC case host should set it to 0
+     */
+    A_UINT32 pdev_id;
+    /** CSA switch count value in the last transmitted beacon */
+    A_UINT32 current_switch_count;
+    A_UINT32 num_vdevs;
+
+    /* The TLVs follows this structure:
+     * A_UINT32 vdev_ids[]; <--- Array of VDEV ids.
+     */
+} wmi_pdev_csa_switch_count_status_event_fixed_param;
 
 
 /* ADD NEW DEFS HERE */
