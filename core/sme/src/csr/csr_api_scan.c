@@ -1728,10 +1728,14 @@ csr_parser_scan_result_for_5ghz_preference(tpAniSirGlobal pMac,
 
 			pIes = (tDot11fBeaconIEs *)(pBssDesc->Result.pvIes);
 			/* At this time, Result.pvIes may be NULL */
-			status = csr_get_parsed_bss_description_ies(pMac,
-					&pBssDesc->Result.BssDescriptor, &pIes);
-			if (!pIes && (!QDF_IS_STATUS_SUCCESS(status)))
-				continue;
+			if (NULL == pIes) {
+				status = csr_get_parsed_bss_description_ies(
+						pMac,
+						&pBssDesc->Result.BssDescriptor,
+						&pIes);
+				if (!pIes && (!QDF_IS_STATUS_SUCCESS(status)))
+					continue;
+			}
 
 			sms_log(pMac, LOG1, FL("SSID Matched"));
 			if (pFilter->bOSENAssociation) {
@@ -2936,12 +2940,14 @@ csr_remove_from_tmp_list(tpAniSirGlobal mac_ctx,
 
 		/* At this time, bss_dscp->Result.pvIes may be NULL */
 		local_ie = (tDot11fBeaconIEs *)(bss_dscp->Result.pvIes);
-		status = csr_get_parsed_bss_description_ies(mac_ctx,
+		if (local_ie == NULL) {
+			status = csr_get_parsed_bss_description_ies(mac_ctx,
 				&bss_dscp->Result.BssDescriptor, &local_ie);
-		if (!local_ie || !QDF_IS_STATUS_SUCCESS(status)) {
-			sms_log(mac_ctx, LOGE, FL("Cannot pared IEs"));
-			csr_free_scan_result_entry(mac_ctx, bss_dscp);
-			continue;
+			if (!local_ie || !QDF_IS_STATUS_SUCCESS(status)) {
+				sms_log(mac_ctx, LOGE, FL("Cannot pared IEs"));
+				csr_free_scan_result_entry(mac_ctx, bss_dscp);
+				continue;
+			}
 		}
 		dup_bss = csr_remove_dup_bss_description(mac_ctx,
 				&bss_dscp->Result.BssDescriptor,
@@ -7215,13 +7221,16 @@ QDF_STATUS csr_scan_save_preferred_network_found(tpAniSirGlobal pMac,
 			SIR_MAC_B_PR_SSID_OFFSET), uLen);
 	}
 	local_ie = (tDot11fBeaconIEs *) (pScanResult->Result.pvIes);
-	status = csr_get_parsed_bss_description_ies(pMac,
-			&pScanResult->Result.BssDescriptor, &local_ie);
-	if (!(local_ie || QDF_IS_STATUS_SUCCESS(status))) {
-		sms_log(pMac, LOGE, FL("Cannot parse IEs"));
-		csr_free_scan_result_entry(pMac, pScanResult);
-		qdf_mem_free(parsed_frm);
-		return QDF_STATUS_E_RESOURCES;
+	if (NULL == local_ie) {
+		status = csr_get_parsed_bss_description_ies(pMac,
+				&pScanResult->Result.BssDescriptor, &local_ie);
+
+		if (!(local_ie || QDF_IS_STATUS_SUCCESS(status))) {
+			sms_log(pMac, LOGE, FL("Cannot parse IEs"));
+			csr_free_scan_result_entry(pMac, pScanResult);
+			qdf_mem_free(parsed_frm);
+			return QDF_STATUS_E_RESOURCES;
+		}
 	}
 
 	fDupBss = csr_remove_dup_bss_description(pMac,
@@ -7456,6 +7465,42 @@ QDF_STATUS csr_scan_save_roam_offload_ap_to_scan_cache(tpAniSirGlobal pMac,
 	return QDF_STATUS_SUCCESS;
 }
 #endif
+
+/**
+ * csr_get_fst_bssdescr_ptr() - This function returns the pointer to first bss
+ * description from scan handle
+ * @result_handle: an object for the result.
+ *
+ * Return: first bss descriptor from the scan handle.
+ */
+tpSirBssDescription csr_get_fst_bssdescr_ptr(tScanResultHandle result_handle)
+{
+	tListElem *first_element = NULL;
+	tCsrScanResult *scan_result = NULL;
+	tScanResultList *bss_list = (tScanResultList *)result_handle;
+
+	if (NULL == bss_list) {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+			FL("Empty bss_list"));
+		return NULL;
+	}
+	if (csr_ll_is_list_empty(&bss_list->List, LL_ACCESS_NOLOCK)) {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+			FL("bss_list->List is empty"));
+		qdf_mem_free(bss_list);
+		return NULL;
+	}
+	first_element = csr_ll_peek_head(&bss_list->List, LL_ACCESS_NOLOCK);
+	if (NULL == first_element) {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+			FL("peer head return NULL"));
+		return NULL;
+	}
+
+	scan_result = GET_BASE_ADDR(first_element, tCsrScanResult, Link);
+
+	return &scan_result->Result.BssDescriptor;
+}
 
 /**
  * csr_get_bssdescr_from_scan_handle() - This function to extract

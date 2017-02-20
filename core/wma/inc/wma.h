@@ -1001,7 +1001,7 @@ typedef struct {
  * @nwType: network type (802.11a/b/g/n/ac)
  * @staKeyParams: sta key parameters
  * @ps_enabled: is powersave enable/disable
- * @dtim_policy: DTIM policy
+ * @restore_dtim_setting: DTIM settings restore flag
  * @peer_count: peer count
  * @roam_synch_in_progress: flag is in progress or not
  * @plink_status_req: link status request
@@ -1070,7 +1070,7 @@ struct wma_txrx_node {
 	int8_t max_tx_power;
 	uint32_t nwType;
 	void *staKeyParams;
-	uint32_t dtim_policy;
+	bool restore_dtim_setting;
 	uint32_t peer_count;
 	bool roam_synch_in_progress;
 	void *plink_status_req;
@@ -1284,6 +1284,41 @@ struct extended_caps {
 	WMI_SOC_HAL_REG_CAPABILITIES num_phy_for_hal_reg_cap;
 	WMI_HAL_REG_CAPABILITIES_EXT *each_phy_hal_reg_cap;
 	struct hw_mode_idx_to_mac_cap_idx *hw_mode_to_mac_cap_map;
+};
+
+/**
+ * struct peer_debug_rec - peer debug information record definition
+ * @time: timestamp when record was added
+ * @operation: identifier for operation, command, event, etc.
+ * @vdev_id: vdev identifier
+ * @peer_id: peer_id. Range 0 - 255, 0xffff is invalid peer_id.
+ * @mac_addr: mac address of peer
+ * @peer_obj: pointer to peer object
+ * @arg1: Optional argument #1
+ * @arg2: Opttional argument #2
+ */
+struct peer_debug_rec {
+	uint64_t time;
+	uint8_t operation;
+	uint8_t vdev_id;
+	uint16_t peer_id;
+	struct qdf_mac_addr mac_addr;
+	void *peer_obj;
+	uint32_t arg1;
+	uint32_t arg2;
+};
+
+#define WMA_PEER_DEBUG_MAX_REC 256
+/**
+ * struct peer_debug_info - Buffer to store the peer debug records
+ * @index: index of the most recent entry in the circular buffer
+ * @num_max_rec: maximum records stored in the records array
+ * @rec: array to store peer debug records, used in circular fashion
+ */
+struct peer_debug_info {
+	qdf_atomic_t index;
+	uint32_t num_max_rec;
+	struct peer_debug_rec rec[WMA_PEER_DEBUG_MAX_REC];
 };
 
 /**
@@ -1613,6 +1648,7 @@ typedef struct {
 	tSirLLStatsResults *link_stats_results;
 	bool fw_mem_dump_enabled;
 	tSirAddonPsReq ps_setting;
+	struct peer_debug_info *peer_dbg;
 } t_wma_handle, *tp_wma_handle;
 
 /**
@@ -2162,11 +2198,15 @@ typedef struct wma_unit_test_cmd {
  * @vdev_id: vdev id
  * @bssid: mac address
  * @channel: channel
+ * @frame_len: frame length, includs mac header, fixed params and ies
+ * @frame_buf: buffer contaning probe response or beacon
  */
 struct wma_roam_invoke_cmd {
 	uint32_t vdev_id;
 	uint8_t bssid[IEEE80211_ADDR_LEN];
 	uint32_t channel;
+	uint32_t frame_len;
+	uint8_t *frame_buf;
 };
 
 /**

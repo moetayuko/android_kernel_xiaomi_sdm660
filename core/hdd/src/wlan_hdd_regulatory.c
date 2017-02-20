@@ -250,9 +250,9 @@ static void hdd_regulatory_wiphy_init(hdd_context_t *hdd_ctx,
 	 * disable 2.4 Ghz channels that dont have 20 mhz bw
 	 */
 	for (chan_num = 0;
-	     chan_num < wiphy->bands[IEEE80211_BAND_2GHZ]->n_channels;
+	     chan_num < wiphy->bands[NL80211_BAND_2GHZ]->n_channels;
 	     chan_num++) {
-		chan = &(wiphy->bands[IEEE80211_BAND_2GHZ]->channels[chan_num]);
+		chan = &(wiphy->bands[NL80211_BAND_2GHZ]->channels[chan_num]);
 		if (chan->flags & IEEE80211_CHAN_NO_20MHZ)
 			chan->flags |= IEEE80211_CHAN_DISABLED;
 	}
@@ -428,7 +428,7 @@ static void hdd_process_regulatory_data(hdd_context_t *hdd_ctx,
 	}
 
 	if (0 == (hdd_ctx->reg.eeprom_rd_ext &
-		  (1 << WHAL_REG_EXT_FCC_CH_144))) {
+		  (1 << WMI_REG_EXT_FCC_CH_144))) {
 		cds_chan = &(reg_channels[CHAN_ENUM_144]);
 		cds_chan->state = CHANNEL_STATE_DISABLE;
 		if (NULL != wiphy_chan_144)

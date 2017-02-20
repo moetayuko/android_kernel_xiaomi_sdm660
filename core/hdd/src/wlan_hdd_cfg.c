@@ -628,6 +628,29 @@ REG_TABLE_ENTRY g_registry_table[] = {
 		     CFG_ENABLE_LTE_COEX_DEFAULT,
 		     CFG_ENABLE_LTE_COEX_MIN,
 		     CFG_ENABLE_LTE_COEX_MAX),
+/*
+ * <ini>
+ * gApAutoChannelSelection - Force ACS from ini
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This ini is used to set to enable force acs from driver.
+ * If enabled, channel/ hw config from hostapd is ignored.
+ * Driver uses INI params dot11Mode, channel bonding mode and vht chan width
+ * to derive ACS HW mode and operating BW.
+ *
+ * Non android platforms shall not use force ACS method and rely on hostapd
+ * driven ACS method for concurrent SAP ACS configuration, OBSS etc.
+ *
+ * Related: Only applicable if gCoalesingInIBSS is 0
+ *
+ * Supported Feature: SAP
+ *
+ * Usage: Internal/External
+ *
+ * </ini>
+ */
 	REG_VARIABLE(CFG_FORCE_SAP_ACS, WLAN_PARAM_Integer,
 		struct hdd_config, force_sap_acs,
 		VAR_FLAGS_DYNAMIC_CFG |
@@ -636,6 +659,25 @@ REG_TABLE_ENTRY g_registry_table[] = {
 		CFG_FORCE_SAP_ACS_MIN,
 		CFG_FORCE_SAP_ACS_MAX),
 
+/*
+ * <ini>
+ * gAPChannelSelectStartChannel - start channel for ACS
+ * @Min: 0
+ * @Max: 0xFF
+ * @Default: 1
+ *
+ * This ini is used to set start channel for ACS.
+ * ACS scan will choose channel between force_sap_acs_st_ch
+ * and force_sap_acs_end_ch
+ *
+ * Related: Only applicable gAPChannelSelectEndChannel is set
+ *
+ * Supported Feature: SAP
+ *
+ * Usage: Internal/External
+ *
+ * </ini>
+ */
 	REG_VARIABLE(CFG_FORCE_SAP_ACS_START_CH, WLAN_PARAM_Integer,
 		struct hdd_config, force_sap_acs_st_ch,
 		VAR_FLAGS_DYNAMIC_CFG |
@@ -644,6 +686,25 @@ REG_TABLE_ENTRY g_registry_table[] = {
 		CFG_FORCE_SAP_ACS_START_CH_MIN,
 		CFG_FORCE_SAP_ACS_START_CH_MAX),
 
+/*
+ * <ini>
+ * gAPChannelSelectEndChannel - end channel for ACS
+ * @Min: 0
+ * @Max: 0xFF
+ * @Default: 11
+ *
+ * This ini is used to set end channel for ACS.
+ * ACS scan will choose channel between force_sap_acs_st_ch
+ * and force_sap_acs_end_ch
+ *
+ * Related: Only applicable if gAPChannelSelectStartChannel is set
+ *
+ * Supported Feature: SAP
+ *
+ * Usage: Internal/External
+ *
+ * </ini>
+ */
 	REG_VARIABLE(CFG_FORCE_SAP_ACS_END_CH, WLAN_PARAM_Integer,
 		struct hdd_config, force_sap_acs_end_ch,
 		VAR_FLAGS_DYNAMIC_CFG |
@@ -2590,7 +2651,7 @@ REG_TABLE_ENTRY g_registry_table[] = {
 		     VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
 		     CFG_ENABLE_FW_LOG_DEFAULT,
 		     CFG_ENABLE_FW_LOG_DISABLE,
-		     CFG_ENABLE_FW_LOG_ENABLE),
+		     CFG_ENABLE_FW_LOG_MAX),
 
 #ifdef IPA_OFFLOAD
 	REG_VARIABLE(CFG_IPA_OFFLOAD_CONFIG_NAME, WLAN_PARAM_HexInteger,
@@ -4230,6 +4291,13 @@ REG_TABLE_ENTRY g_registry_table[] = {
 		CFG_HW_FILTER_DEFAULT,
 		CFG_HW_FILTER_MIN,
 		CFG_HW_FILTER_MAX),
+
+	REG_VARIABLE(CFG_SAP_INTERNAL_RESTART_NAME, WLAN_PARAM_Integer,
+		struct hdd_config, sap_internal_restart,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_SAP_INTERNAL_RESTART_DEFAULT,
+		CFG_SAP_INTERNAL_RESTART_MIN,
+		CFG_SAP_INTERNAL_RESTART_MAX),
 };
 
 /**
@@ -5710,6 +5778,9 @@ void hdd_cfg_print(hdd_context_t *pHddCtx)
 		CFG_HW_BC_FILTER_NAME,
 		pHddCtx->config->hw_broadcast_filter);
 	hdd_per_roam_print_ini_config(pHddCtx);
+	hdd_info("Name = [%s] Value = [%d]",
+		CFG_SAP_INTERNAL_RESTART_NAME,
+		pHddCtx->config->sap_internal_restart);
 }
 
 
@@ -6052,16 +6123,25 @@ eCsrPhyMode hdd_cfg_xlate_to_csr_phy_mode(eHddDot11Mode dot11Mode)
  * Return: QDF_STATUS_SUCCESS if command set correctly,
  *		otherwise the QDF_STATUS return from SME layer
  */
-QDF_STATUS hdd_set_idle_ps_config(hdd_context_t *pHddCtx, uint32_t val)
+QDF_STATUS hdd_set_idle_ps_config(hdd_context_t *pHddCtx, bool val)
 {
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
+	if (pHddCtx->imps_enabled == val) {
+		hdd_notice("Already in the requested power state:%d", val);
+		return QDF_STATUS_SUCCESS;
+	}
+
 	hdd_notice("hdd_set_idle_ps_config: Enter Val %d", val);
 
-	status = sme_set_idle_powersave_config(pHddCtx->pcds_context,
-			pHddCtx->hHal, val);
-	if (QDF_STATUS_SUCCESS != status)
+	status = sme_set_idle_powersave_config(val);
+	if (QDF_STATUS_SUCCESS != status) {
 		hdd_err("Fail to Set Idle PS Config val %d", val);
+		return status;
+	}
+
+	pHddCtx->imps_enabled = val;
+
 	return status;
 }
 

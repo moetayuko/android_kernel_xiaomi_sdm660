@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -113,13 +113,14 @@ static inline int hdd_ipa_send_mcc_scc_msg(hdd_context_t *hdd_ctx,
 	return 0;
 }
 #endif
-int hdd_ipa_uc_ssr_reinit(void);
+int hdd_ipa_uc_ssr_reinit(hdd_context_t *hdd_ctx);
 int hdd_ipa_uc_ssr_deinit(void);
 void hdd_ipa_uc_force_pipe_shutdown(hdd_context_t *hdd_ctx);
 struct sk_buff *hdd_ipa_tx_packet_ipa(hdd_context_t *hdd_ctx,
 	struct sk_buff *skb, uint8_t session_id);
 bool hdd_ipa_is_present(hdd_context_t *hdd_ctx);
 void hdd_ipa_dump_info(hdd_context_t *hdd_ctx);
+QDF_STATUS hdd_ipa_uc_ol_init(hdd_context_t *hdd_ctx);
 #else
 static inline QDF_STATUS hdd_ipa_init(hdd_context_t *hdd_ctx)
 {
@@ -201,7 +202,7 @@ static inline void hdd_ipa_dump_info(hdd_context_t *hdd_ctx)
 	return;
 }
 
-static inline int hdd_ipa_uc_ssr_reinit(void)
+static inline int hdd_ipa_uc_ssr_reinit(hdd_context_t *hdd_ctx)
 {
 	return false;
 }
@@ -247,6 +248,17 @@ static inline struct sk_buff *hdd_ipa_tx_packet_ipa(hdd_context_t *hdd_ctx,
 bool hdd_ipa_is_present(hdd_context_t *hdd_ctx)
 {
 	return false;
+}
+
+/**
+ * hdd_ipa_uc_ol_init() - Initialize IPA uC offload
+ * @hdd_ctx: Global HDD context
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS hdd_ipa_uc_ol_init(hdd_context_t *hdd_ctx)
+{
+	return QDF_STATUS_SUCCESS;
 }
 #endif /* IPA_OFFLOAD */
 #endif /* #ifndef HDD_IPA_H__ */

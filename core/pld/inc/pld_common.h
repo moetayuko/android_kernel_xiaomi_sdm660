@@ -127,7 +127,8 @@ struct pld_platform_cap {
 enum pld_driver_status {
 	PLD_UNINITIALIZED,
 	PLD_INITIALIZED,
-	PLD_LOAD_UNLOAD
+	PLD_LOAD_UNLOAD,
+	PLD_RECOVERY,
 };
 
 /**
@@ -255,6 +256,8 @@ struct pld_soc_info {
  *          is enabled
  * @modem_status: optional operation, will be called when platform driver
  *                sending modem power status to WLAN FW
+ * @update_status: optional operation, will be called when platform driver
+ *                 updating driver status
  * @runtime_suspend: optional operation, prepare the device for a condition
  *                   in which it won't be able to communicate with the CPU(s)
  *                   and RAM due to power management.
@@ -287,6 +290,7 @@ struct pld_driver_ops {
 	void (*modem_status)(struct device *dev,
 			     enum pld_bus_type bus_type,
 			     int state);
+	void (*update_status)(struct device *dev, uint32_t status);
 	int (*runtime_suspend)(struct device *dev,
 			       enum pld_bus_type bus_type);
 	int (*runtime_resume)(struct device *dev,
@@ -306,7 +310,7 @@ void pld_unregister_driver(void);
 int pld_wlan_enable(struct device *dev, struct pld_wlan_enable_cfg *config,
 		    enum pld_driver_mode mode, const char *host_version);
 int pld_wlan_disable(struct device *dev, enum pld_driver_mode mode);
-int pld_set_fw_debug_mode(struct device *dev, bool enablefwlog);
+int pld_set_fw_log_mode(struct device *dev, u8 fw_log_mode);
 void pld_get_default_fw_files(struct pld_fw_files *pfw_files);
 int pld_get_fw_files_for_target(struct device *dev,
 				struct pld_fw_files *pfw_files,

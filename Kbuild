@@ -197,9 +197,11 @@ ifneq ($(CONFIG_ROME_IF),sdio)
 
 	# Flag to enable LRO (Large Receive Offload)
 	ifeq ($(CONFIG_INET_LRO), y)
-		CONFIG_WLAN_LRO := y
-	else
-		CONFIG_WLAN_LRO := n
+		ifeq ($(VERSION), 4)
+			CONFIG_WLAN_LRO := y
+		else
+			CONFIG_WLAN_LRO := n
+		endif
 	endif
 endif
 
@@ -1008,7 +1010,7 @@ ifeq ($(CONFIG_PLD_USB_CNSS), y)
 PLD_OBJS +=	$(PLD_SRC_DIR)/pld_usb.o
 endif
 
-TARGET_INC :=	-I$(WLAN_ROOT)/target/inc
+TARGET_INC := -I$(WLAN_ROOT)/../fw-api/fw
 
 LINUX_INC :=	-Iinclude/linux
 

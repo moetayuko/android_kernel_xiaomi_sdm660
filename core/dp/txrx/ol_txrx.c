@@ -85,7 +85,9 @@
 #include <cds_concurrency.h>
 #include "epping_main.h"
 #include <a_types.h>
+#include "wma_api.h"
 
+#include <htt_internal.h>
 #ifdef CONFIG_HL_SUPPORT
 
 /**
@@ -2278,6 +2280,7 @@ ol_txrx_peer_attach(ol_txrx_vdev_handle vdev, uint8_t *peer_mac_addr)
 				"error waiting for peer(%d) deletion, status %d\n",
 				vdev->wait_on_peer_id, (int) rc);
 			/* Added for debugging only */
+			wma_peer_debug_dump();
 			QDF_BUG(0);
 			vdev->wait_on_peer_id = OL_TXRX_INVALID_LOCAL_PEER_ID;
 			return NULL;
@@ -2930,6 +2933,9 @@ int ol_txrx_peer_unref_delete(ol_txrx_peer_handle peer)
 		return -EINVAL;
 	}
 
+	wma_peer_debug_log(vdev->vdev_id, DEBUG_PEER_UNREF_DELETE,
+			   DEBUG_INVALID_PEER_ID, &peer->mac_addr.raw, peer, 0,
+			   qdf_atomic_read(&peer->ref_cnt));
 
 	/*
 	 * Hold the lock all the way from checking if the peer ref count
@@ -2969,11 +2975,16 @@ int ol_txrx_peer_unref_delete(ol_txrx_peer_handle peer)
 	if (qdf_atomic_dec_and_test(&peer->ref_cnt)) {
 		u_int16_t peer_id;
 
-		TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
+		TXRX_PRINT(TXRX_PRINT_LEVEL_INFO1,
 			   "Deleting peer %p (%pM) ref_cnt %d\n",
 			   peer,
 			   peer->mac_addr.raw,
 			   qdf_atomic_read(&peer->ref_cnt));
+
+		wma_peer_debug_log(vdev->vdev_id, DEBUG_DELETING_PEER_OBJ,
+				   DEBUG_INVALID_PEER_ID,
+				   &peer->mac_addr.raw, peer, 0,
+				   qdf_atomic_read(&peer->ref_cnt));
 
 		peer_id = peer->local_id;
 		/* remove the reference to the peer from the hash table */
@@ -3001,7 +3012,6 @@ int ol_txrx_peer_unref_delete(ol_txrx_peer_handle peer)
 			qdf_mc_timer_stop(&peer->peer_unmap_timer);
 			qdf_mc_timer_destroy(&peer->peer_unmap_timer);
 		}
-
 		/* check whether the parent vdev has no peers left */
 		if (TAILQ_EMPTY(&vdev->peer_list)) {
 			/*
@@ -3147,6 +3157,7 @@ void peer_unmap_timer_handler(void *data)
 		 peer->mac_addr.raw[0], peer->mac_addr.raw[1],
 		 peer->mac_addr.raw[2], peer->mac_addr.raw[3],
 		 peer->mac_addr.raw[4], peer->mac_addr.raw[5]);
+	wma_peer_debug_dump();
 	QDF_BUG(0);
 }
 
@@ -3178,7 +3189,7 @@ void ol_txrx_peer_detach(ol_txrx_peer_handle peer)
 	/* debug print to dump rx reorder state */
 	/* htt_rx_reorder_log_print(vdev->pdev->htt_pdev); */
 
-	TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
+	TXRX_PRINT(TXRX_PRINT_LEVEL_INFO1,
 		   "%s:peer %p (%02x:%02x:%02x:%02x:%02x:%02x)",
 		   __func__, peer,
 		   peer->mac_addr.raw[0], peer->mac_addr.raw[1],
@@ -4349,6 +4360,9 @@ QDF_STATUS ol_txrx_display_stats(uint16_t value)
 		break;
 	case WLAN_TXRX_DESC_STATS:
 		qdf_nbuf_tx_desc_count_display();
+		break;
+	case WLAN_RX_BUF_DEBUG_STATS:
+		htt_display_rx_buf_debug(pdev->htt_pdev);
 		break;
 #ifdef CONFIG_HL_SUPPORT
 	case WLAN_SCHEDULER_STATS:
