@@ -338,19 +338,6 @@ unsigned long __qdf_rounddown_pow_of_two(unsigned long n)
 	return __rounddown_pow_of_two(n);
 }
 
-/**
- * __qdf_get_ipa_hw_type() - get IPA hw type
- *
- * This API return the IPA hw type.
- *
- * Return: IPA hw type
- */
-static inline
-enum ipa_hw_type __qdf_get_ipa_hw_type(void)
-{
-	return ipa_get_hw_type();
-}
-
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)
 
 /**

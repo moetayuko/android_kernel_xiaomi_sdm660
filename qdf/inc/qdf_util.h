@@ -502,19 +502,6 @@ bool qdf_is_group_addr(uint8_t *mac_addr)
 }
 
 /**
- * qdf_get_ipa_hw_type() - get IPA hw type
- *
- * This API return the IPA hw type.
- *
- * Return: IPA hw type
- */
-static inline
-enum ipa_hw_type qdf_get_ipa_hw_type(void)
-{
-	return __qdf_get_ipa_hw_type();
-}
-
-/**
  * qdf_set_dma_coherent_mask() - set max number of bits allowed in dma addr
  * @dev: device pointer
  * @addr_bits: max number of bits allowed in dma address
