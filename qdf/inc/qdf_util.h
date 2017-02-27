@@ -41,9 +41,6 @@
 #define QDF_MAX_AVAILABLE_CPU	1
 #endif
 
-#define DMA_COHERENT_MASK_IPA_VER_3_AND_ABOVE   37
-#define DMA_COHERENT_MASK_BELOW_IPA_VER_3       32
-
 /**
  * qdf_unlikely - Compiler-dependent macro denoting code likely to execute
  * @_expr: expression to be checked

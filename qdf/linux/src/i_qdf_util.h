@@ -44,7 +44,6 @@
 #include <qdf_types.h>
 #include <qdf_status.h>
 #include <asm/byteorder.h>
-#include <linux/ipa.h>
 
 #if LINUX_VERSION_CODE  <= KERNEL_VERSION(3, 3, 8)
 #include <asm/system.h>
