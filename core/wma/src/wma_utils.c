@@ -1774,6 +1774,36 @@ int wma_link_status_event_handler(void *handle, uint8_t *cmd_param_info,
 	return 0;
 }
 
+int wma_rso_cmd_status_event_handler(wmi_roam_event_fixed_param *wmi_event)
+{
+	struct rso_cmd_status *rso_status;
+	cds_msg_t sme_msg;
+	QDF_STATUS qdf_status;
+
+	rso_status = qdf_mem_malloc(sizeof(*rso_status));
+	if (!rso_status) {
+		WMA_LOGE("%s: malloc fails for rso cmd status", __func__);
+		return -ENOMEM;
+	}
+
+	rso_status->vdev_id = wmi_event->vdev_id;
+	if (WMI_ROAM_NOTIF_SCAN_MODE_SUCCESS == wmi_event->notif)
+		rso_status->status = true;
+	else if (WMI_ROAM_NOTIF_SCAN_MODE_FAIL == wmi_event->notif)
+		rso_status->status = false;
+	sme_msg.type = eWNI_SME_RSO_CMD_STATUS_IND;
+	sme_msg.bodyptr = rso_status;
+	sme_msg.bodyval = 0;
+	WMA_LOGI("%s: Post RSO cmd status to SME",  __func__);
+
+	qdf_status = cds_mq_post_message(QDF_MODULE_ID_SME, &sme_msg);
+	if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
+		WMA_LOGE("%s: fail to post RSO cmd status to SME", __func__);
+		qdf_mem_free(rso_status);
+	}
+	return 0;
+}
+
 /**
  * wma_stats_event_handler() - stats event handler
  * @handle: wma handle
@@ -4052,6 +4082,11 @@ void wma_peer_debug_log(uint8_t vdev_id, uint8_t op,
 	uint32_t i;
 	struct peer_debug_rec *rec;
 
+	if (!wma) {
+		WMA_LOGD("%s: WMA handle NULL. Exiting", __func__);
+		return;
+	}
+
 	i = wma_next_peer_log_index(&wma->peer_dbg->index,
 				    WMA_PEER_DEBUG_MAX_REC);
 	rec = &wma->peer_dbg->rec[i];
@@ -4129,6 +4164,11 @@ void wma_peer_debug_dump(void)
 	uint32_t current_index;
 	struct peer_debug_rec *dbg_rec;
 	uint64_t startt = 0;
+
+	if (!wma) {
+		WMA_LOGD("%s: WMA handle NULL. Exiting", __func__);
+		return;
+	}
 
 #define DEBUG_CLOCK_TICKS_PER_MSEC 19200
 
