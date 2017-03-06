@@ -1772,7 +1772,6 @@ void ol_txrx_pdev_pre_detach(ol_txrx_pdev_handle pdev, int force)
 		"freed %d tx frames for which no resp from target",
 		num_freed_tx_desc);
 
-	htt_deregister_rx_pkt_dump_callback(pdev->htt_pdev);
 	ol_tx_deregister_flow_control(pdev);
 	/* Stop the communication between HTT and target at first */
 	htt_detach_target(pdev->htt_pdev);
