@@ -4524,6 +4524,13 @@ REG_TABLE_ENTRY g_registry_table[] = {
 		CFG_DTIM_1CHRX_ENABLE_DEFAULT,
 		CFG_DTIM_1CHRX_ENABLE_MIN,
 		CFG_DTIM_1CHRX_ENABLE_MAX),
+
+	REG_VARIABLE(CFG_ARP_AC_CATEGORY, WLAN_PARAM_Integer,
+		struct hdd_config, arp_ac_category,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_ARP_AC_CATEGORY_DEFAULT,
+		CFG_ARP_AC_CATEGORY_MIN,
+		CFG_ARP_AC_CATEGORY_MAX),
 };
 
 /**
@@ -6050,6 +6057,9 @@ void hdd_cfg_print(hdd_context_t *pHddCtx)
 	hdd_debug("Name = [%s] value = [%u]",
 		CFG_DTIM_1CHRX_ENABLE_NAME,
 		pHddCtx->config->enable_dtim_1chrx);
+	hdd_debug("Name = [%s] value = [%u]",
+		CFG_ARP_AC_CATEGORY,
+		pHddCtx->config->arp_ac_category);
 }
 
 
