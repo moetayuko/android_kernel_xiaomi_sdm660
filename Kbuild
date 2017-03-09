@@ -78,7 +78,9 @@ ifeq ($(KERNEL_BUILD), 0)
 	#Flag to enable Legacy Fast Roaming2(LFR2)
 	CONFIG_QCACLD_WLAN_LFR2 := y
 	#Flag to enable Legacy Fast Roaming3(LFR3)
+	ifneq ($(CONFIG_ARCH_SDXHEDGEHOG), y)
 	CONFIG_QCACLD_WLAN_LFR3 := y
+	endif
 
 	#Enable Power debugfs feature only if debug_fs is enabled
 	ifeq ($(CONFIG_DEBUG_FS), y)
@@ -1563,7 +1565,6 @@ ifeq ($(CONFIG_ARCH_MSM8998), y)
 CONFIG_ENABLE_DEBUG_ADDRESS_MARKING := y
 endif
 ifeq ($(CONFIG_HELIUMPLUS),y)
-CDEFINES += -DHELIUMPLUS_PADDR64
 CDEFINES += -DHELIUMPLUS
 CDEFINES += -DAR900B
 ifeq ($(CONFIG_64BIT_PADDR),y)
