@@ -2171,6 +2171,14 @@ REG_TABLE_ENTRY g_registry_table[] = {
 			     CFG_DISABLE_DFS_JAPAN_W53_MIN,
 			     CFG_DISABLE_DFS_JAPAN_W53_MAX,
 			     ch_notify_set_g_disable_dfs_japan_w53, 0),
+
+	REG_VARIABLE(CFG_MAX_HT_MCS_FOR_TX_DATA, WLAN_PARAM_HexInteger,
+		     struct hdd_config, max_ht_mcs_txdata,
+		     VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		     CFG_MAX_HT_MCS_FOR_TX_DATA_DEFAULT,
+		     CFG_MAX_HT_MCS_FOR_TX_DATA_MIN,
+		     CFG_MAX_HT_MCS_FOR_TX_DATA_MAX),
+
 	REG_VARIABLE(CFG_ENABLE_FIRST_SCAN_2G_ONLY_NAME, WLAN_PARAM_Integer,
 		     struct hdd_config, enableFirstScan2GOnly,
 		     VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
@@ -4285,7 +4293,6 @@ REG_TABLE_ENTRY g_registry_table[] = {
 		CFG_ENABLE_BCAST_PROBE_RESP_DEFAULT,
 		CFG_ENABLE_BCAST_PROBE_RESP_MIN,
 		CFG_ENABLE_BCAST_PROBE_RESP_MAX),
-
 	REG_VARIABLE(CFG_QCN_IE_SUPPORT_NAME, WLAN_PARAM_Integer,
 		struct hdd_config, qcn_ie_support,
 		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
@@ -4298,7 +4305,6 @@ REG_TABLE_ENTRY g_registry_table[] = {
 		CFG_FILS_MAX_CHAN_GUARD_TIME_DEFAULT,
 		CFG_FILS_MAX_CHAN_GUARD_TIME_MIN,
 		CFG_FILS_MAX_CHAN_GUARD_TIME_MAX),
-
 	REG_VARIABLE(CFG_ENABLE_5G_BAND_PREF_NAME, WLAN_PARAM_Integer,
 		struct hdd_config, enable_5g_band_pref,
 		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
@@ -4347,6 +4353,12 @@ REG_TABLE_ENTRY g_registry_table[] = {
 		CFG_5G_MAX_RSSI_PENALIZE_DEFAULT,
 		CFG_5G_MAX_RSSI_PENALIZE_MIN,
 		CFG_5G_MAX_RSSI_PENALIZE_MAX),
+	REG_VARIABLE(CFG_ENABLE_PACKET_FILTERS_NAME, WLAN_PARAM_Integer,
+		struct hdd_config, packet_filters_bitmap,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_ENABLE_PACKET_FILTERS_DEFAULT,
+		CFG_ENABLE_PACKET_FILTERS_MIN,
+		CFG_ENABLE_PACKET_FILTERS_MAX),
 };
 
 /**
@@ -6009,7 +6021,7 @@ static void hdd_set_rx_mode_value(hdd_context_t *hdd_ctx)
 {
 	if (hdd_ctx->config->rx_mode & CFG_ENABLE_RX_THREAD &&
 		 hdd_ctx->config->rx_mode & CFG_ENABLE_RPS) {
-		hdd_err("rx_mode wrong configuration. Make it default");
+		hdd_notice("rx_mode wrong configuration. Make it default");
 		hdd_ctx->config->rx_mode = CFG_RX_MODE_DEFAULT;
 	}
 
@@ -6333,7 +6345,7 @@ QDF_STATUS hdd_hex_string_to_u16_array(char *str,
 	if (str == NULL || int_array == NULL || len == NULL)
 		return QDF_STATUS_E_INVAL;
 
-	hdd_err("str %p intArray %p intArrayMaxLen %d",
+	hdd_notice("str %p intArray %p intArrayMaxLen %d",
 		s, int_array, int_array_max_len);
 
 	*len = 0;
@@ -6944,6 +6956,13 @@ bool hdd_update_config_cfg(hdd_context_t *hdd_ctx)
 	    config->tgt_gtx_usr_cfg) == QDF_STATUS_E_FAILURE) {
 		status = false;
 		hdd_err("Couldn't pass on WNI_CFG_TGT_GTX_USR_CFG to CCM");
+	}
+
+	if (sme_cfg_set_int(hdd_ctx->hHal, WNI_CFG_MAX_HT_MCS_TX_DATA,
+			    config->max_ht_mcs_txdata) ==
+			    QDF_STATUS_E_FAILURE) {
+		status = false;
+		hdd_err("Couldn't pass on WNI_CFG_MAX_HT_MCS_TX_DATA to CCM");
 	}
 	return status;
 }

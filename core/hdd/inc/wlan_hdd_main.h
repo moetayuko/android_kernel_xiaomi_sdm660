@@ -384,10 +384,10 @@ typedef struct hdd_tx_rx_stats_s {
 	/* start_xmit stats */
 	__u32    txXmitCalled;
 	__u32    txXmitDropped;
+	__u32    txXmitOrphaned;
 	__u32    txXmitClassifiedAC[NUM_TX_QUEUES];
 	__u32    txXmitDroppedAC[NUM_TX_QUEUES];
-	/* complete_cbk_stats */
-	__u32    txCompleted;
+
 	/* rx stats */
 	__u32 rxPackets[NUM_CPUS];
 	__u32 rxDropped[NUM_CPUS];
@@ -1445,7 +1445,6 @@ struct hdd_context_s {
 
 #ifdef FEATURE_WLAN_TDLS
 	eTDLSSupportMode tdls_mode;
-	bool concurrency_marked;
 	eTDLSSupportMode tdls_mode_last;
 	tdlsConnInfo_t tdlsConnInfo[HDD_MAX_NUM_TDLS_STA];
 	/* maximum TDLS station number allowed upon runtime condition */
@@ -1657,6 +1656,7 @@ struct hdd_context_s {
 	uint8_t beacon_probe_rsp_cnt_per_scan;
 	bool rcpi_enabled;
 	bool imps_enabled;
+	int user_configured_pkt_filter_rules;
 };
 
 /*---------------------------------------------------------------------------
