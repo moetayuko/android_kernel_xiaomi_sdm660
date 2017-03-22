@@ -1193,6 +1193,7 @@ struct dfs_ieee80211_channel *wma_dfs_configure_channel(
 						uint32_t band_center_freq2,
 						struct wma_vdev_start_req
 						*req);
+void wma_set_vdev_mgmt_rate(tp_wma_handle wma, uint8_t vdev_id);
 void wma_set_sap_keepalive(tp_wma_handle wma, uint8_t vdev_id);
 
 int wma_rssi_breached_event_handler(void *handle,
@@ -1347,4 +1348,6 @@ wma_send_vdev_start_to_fw(t_wma_handle *wma, struct vdev_start_params *params);
  */
 QDF_STATUS wma_send_vdev_stop_to_fw(t_wma_handle *wma, uint8_t vdev_id);
 
+int wma_get_arp_stats_handler(void *handle, uint8_t *data,
+			      uint32_t data_len);
 #endif

@@ -71,6 +71,7 @@
 
 #define HIDDEN_TIMER (1*60*1000)
 #define CSR_SCAN_RESULT_RSSI_WEIGHT     80      /* must be less than 100, represent the persentage of new RSSI */
+#define CSR_PURGE_RSSI_THRESHOLD     -70
 
 #define MAX_ACTIVE_SCAN_FOR_ONE_CHANNEL 140
 #define MIN_ACTIVE_SCAN_FOR_ONE_CHANNEL 120
@@ -2868,22 +2869,25 @@ static bool csr_process_bss_desc_for_bkid_list(tpAniSirGlobal pMac,
 #endif
 
 /**
- * csr_purge_old_scan_results() - This function removes old scan entries
+ * csr_purge_scan_results() - This function removes scan entry based
+ * on RSSI or AGE
  * @mac_ctx: pointer to Global MAC structure
  *
- * This function removes old scan entries
+ * This function removes scan entry based on RSSI or AGE.
+ * If an scan entry with RSSI less than CSR_PURGE_RSSI_THRESHOLD,
+ * the scan entry is removed else oldest entry is removed.
  *
  * Return: None
  */
-
-static void csr_purge_old_scan_results(tpAniSirGlobal mac_ctx)
+static void csr_purge_scan_results(tpAniSirGlobal mac_ctx)
 {
 	tListElem *pentry, *tmp_entry;
-	tCsrScanResult *presult, *oldest_bss = NULL;
+	tCsrScanResult *presult, *oldest_bss = NULL, *weakest_bss = NULL;
 	uint64_t oldest_entry = 0;
 	uint64_t curr_time = (uint64_t)qdf_mc_timer_get_system_time();
+	int8_t weakest_rssi = 0;
 
-	csr_ll_unlock(&mac_ctx->scan.scanResultList);
+	csr_ll_lock(&mac_ctx->scan.scanResultList);
 	pentry = csr_ll_peek_head(&mac_ctx->scan.scanResultList,
 					LL_ACCESS_NOLOCK);
 	while (pentry) {
@@ -2896,19 +2900,30 @@ static void csr_purge_old_scan_results(tpAniSirGlobal mac_ctx)
 				presult->Result.BssDescriptor.received_time;
 			oldest_bss = presult;
 		}
+		if (presult->Result.BssDescriptor.rssi < weakest_rssi) {
+			weakest_rssi = presult->Result.BssDescriptor.rssi;
+			weakest_bss = presult;
+		}
 		pentry = tmp_entry;
 	}
 	if (oldest_bss) {
+		tCsrScanResult *bss_to_remove;
+
+		if (weakest_rssi < CSR_PURGE_RSSI_THRESHOLD)
+			bss_to_remove = weakest_bss;
+		else
+			bss_to_remove = oldest_bss;
 		/* Free the old BSS Entries */
 		if (csr_ll_remove_entry(&mac_ctx->scan.scanResultList,
-		    &oldest_bss->Link, LL_ACCESS_NOLOCK)) {
+		    &bss_to_remove->Link, LL_ACCESS_NOLOCK)) {
 			sms_log(mac_ctx, LOG1,
-				FL("Current time delta (%llu) of BSSID to be removed" MAC_ADDRESS_STR),
-				(curr_time -
-				oldest_bss->Result.BssDescriptor.received_time),
+				FL("BSSID: "MAC_ADDRESS_STR" Removed, time delta (%llu) RSSI %d"),
 				MAC_ADDR_ARRAY(
-				oldest_bss->Result.BssDescriptor.bssId));
-			csr_free_scan_result_entry(mac_ctx, oldest_bss);
+				bss_to_remove->Result.BssDescriptor.bssId),
+				(curr_time -
+				bss_to_remove->Result.BssDescriptor.received_time),
+				bss_to_remove->Result.BssDescriptor.rssi);
+			csr_free_scan_result_entry(mac_ctx, bss_to_remove);
 		}
 	}
 	csr_ll_unlock(&mac_ctx->scan.scanResultList);
@@ -2958,7 +2973,7 @@ csr_remove_from_tmp_list(tpAniSirGlobal mac_ctx,
 		 */
 		if (CSR_SCAN_IS_OVER_BSS_LIMIT(mac_ctx)) {
 			sms_log(mac_ctx, LOG1, FL("BSS Limit reached"));
-			csr_purge_old_scan_results(mac_ctx);
+			csr_purge_scan_results(mac_ctx);
 		}
 		/* check for duplicate scan results */
 		if (!dup_bss) {
@@ -7220,6 +7235,26 @@ QDF_STATUS csr_scan_save_preferred_network_found(tpAniSirGlobal pMac,
 	qdf_mem_copy((uint8_t *) &pBssDescr->bssId,
 		     (uint8_t *) macHeader->bssId, sizeof(tSirMacAddr));
 	pBssDescr->received_time = (uint64_t)qdf_mc_timer_get_system_time();
+
+	/* MobilityDomain */
+	pBssDescr->mdie[0] = 0;
+	pBssDescr->mdie[1] = 0;
+	pBssDescr->mdie[2] = 0;
+	pBssDescr->mdiePresent = false;
+	/*
+	 * If mdie is present in the probe rsp we fill it in the bss description
+	 */
+	if (parsed_frm->mdiePresent) {
+		pBssDescr->mdiePresent = true;
+		pBssDescr->mdie[0] = parsed_frm->mdie[0];
+		pBssDescr->mdie[1] = parsed_frm->mdie[1];
+		pBssDescr->mdie[2] = parsed_frm->mdie[2];
+	}
+	sms_log(pMac, LOG1, FL("mdie=%02x%02x%02x"),
+		(unsigned int)pBssDescr->mdie[0],
+		(unsigned int)pBssDescr->mdie[1],
+		(unsigned int)pBssDescr->mdie[2]);
+
 	sms_log(pMac, LOG2, FL("Bssid= "MAC_ADDRESS_STR" chan= %d, rssi = %d"),
 		MAC_ADDR_ARRAY(pBssDescr->bssId), pBssDescr->channelId,
 		pBssDescr->rssi);
