@@ -5564,8 +5564,12 @@ static int hdd_wiphy_init(hdd_context_t *hdd_ctx)
 
 	/* registration of wiphy dev with cfg80211 */
 	ret_val = wlan_hdd_cfg80211_register(wiphy);
-	if (0 > ret_val)
+	if (0 > ret_val) {
 		hdd_err("wiphy registration failed");
+		return ret_val;
+	}
+
+	hdd_program_country_code(hdd_ctx);
 
 	return ret_val;
 }
@@ -6613,13 +6617,17 @@ void hdd_ch_avoid_cb(void *hdd_context, void *indi_param)
 	 * first update the unsafe channel list to the platform driver and
 	 * send the avoid freq event to the application
 	 */
-	wlan_hdd_send_avoid_freq_event(hdd_ctxt, &hdd_avoid_freq_list);
+	if (hdd_ctxt->config->restart_beaconing_on_chan_avoid_event) {
+		wlan_hdd_send_avoid_freq_event(hdd_ctxt, &hdd_avoid_freq_list);
 
-	if (!hdd_ctxt->unsafe_channel_count) {
-		hdd_info("no unsafe channels - not restarting SAP");
-		return;
+		if (!hdd_ctxt->unsafe_channel_count) {
+			hdd_info("no unsafe channels - not restarting SAP");
+			return;
+		}
+
+		hdd_unsafe_channel_restart_sap(hdd_ctxt);
 	}
-	hdd_unsafe_channel_restart_sap(hdd_ctxt);
+
 	return;
 }
 
@@ -7961,8 +7969,6 @@ static int hdd_pre_enable_configure(hdd_context_t *hdd_ctx)
 		hdd_err("WMI_PDEV_PARAM_TX_CHAIN_MASK_1SS failed %d", ret);
 		goto out;
 	}
-
-	hdd_program_country_code(hdd_ctx);
 
 	status = hdd_set_sme_chan_list(hdd_ctx);
 	if (status != QDF_STATUS_SUCCESS) {
