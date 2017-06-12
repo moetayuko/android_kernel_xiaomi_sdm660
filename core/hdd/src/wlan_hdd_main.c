@@ -615,6 +615,28 @@ int wlan_hdd_validate_context(hdd_context_t *hdd_ctx)
 }
 
 /**
+ * wlan_hdd_modules_are_enabled() - Check modules status
+ * @hdd_ctx: HDD context pointer
+ *
+ * Check's the driver module's state and returns true if the
+ * modules are enabled returns false if modules are closed.
+ *
+ * Return: True if modules are enabled or false.
+ */
+bool wlan_hdd_modules_are_enabled(hdd_context_t *hdd_ctx)
+{
+	mutex_lock(&hdd_ctx->iface_change_lock);
+	if (hdd_ctx->driver_status != DRIVER_MODULES_ENABLED) {
+		mutex_unlock(&hdd_ctx->iface_change_lock);
+		hdd_notice("Modules not enabled, Present status: %d",
+			   hdd_ctx->driver_status);
+		return false;
+	}
+	mutex_unlock(&hdd_ctx->iface_change_lock);
+	return true;
+}
+
+/**
  * hdd_set_ibss_power_save_params() - update IBSS Power Save params to WMA.
  * @hdd_adapter_t Hdd adapter.
  *
@@ -1483,8 +1505,6 @@ void hdd_update_tgt_cfg(void *context, void *param)
 	hdd_info("Init current antenna mode: %d",
 		 hdd_ctx->current_antenna_mode);
 
-	hdd_info("Target BPF %d Host BPF %d",
-		cfg->bpf_enabled, hdd_ctx->config->bpf_packet_filter_enable);
 	hdd_ctx->bpf_enabled = (cfg->bpf_enabled &&
 				hdd_ctx->config->bpf_packet_filter_enable);
 	hdd_ctx->rcpi_enabled = cfg->rcpi_enabled;
@@ -1492,6 +1512,21 @@ void hdd_update_tgt_cfg(void *context, void *param)
 
 	hdd_ctx->fw_mem_dump_enabled = cfg->fw_mem_dump_enabled;
 
+	if ((hdd_ctx->config->txBFCsnValue >
+		WNI_CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED_FW_DEF) &&
+						!cfg->tx_bfee_8ss_enabled)
+		hdd_ctx->config->txBFCsnValue =
+			WNI_CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED_FW_DEF;
+
+	if (sme_cfg_set_int(hdd_ctx->hHal,
+			WNI_CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED,
+			hdd_ctx->config->txBFCsnValue) == QDF_STATUS_E_FAILURE)
+		hdd_err("fw update WNI_CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED to CFG fails");
+
+
+	hdd_debug("Target BPF %d Host BPF %d 8ss fw support %d txBFCsnValue %d",
+		cfg->bpf_enabled, hdd_ctx->config->bpf_packet_filter_enable,
+		cfg->tx_bfee_8ss_enabled, hdd_ctx->config->txBFCsnValue);
 	/*
 	 * If BPF is enabled, maxWowFilters set to WMA_STA_WOW_DEFAULT_PTRN_MAX
 	 * because we need atleast WMA_STA_WOW_DEFAULT_PTRN_MAX free slots to
@@ -3933,6 +3968,7 @@ QDF_STATUS hdd_reset_all_adapters(hdd_context_t *hdd_ctx)
 	hdd_adapter_list_node_t *adapterNode = NULL, *pNext = NULL;
 	QDF_STATUS status;
 	hdd_adapter_t *adapter;
+	tdlsCtx_t *tdls_ctx;
 
 	ENTER();
 
@@ -3942,7 +3978,16 @@ QDF_STATUS hdd_reset_all_adapters(hdd_context_t *hdd_ctx)
 
 	while (NULL != adapterNode && QDF_STATUS_SUCCESS == status) {
 		adapter = adapterNode->pAdapter;
-		hdd_notice("Disabling queues");
+
+		if ((adapter->device_mode == QDF_STA_MODE) ||
+			(adapter->device_mode == QDF_P2P_CLIENT_MODE)) {
+			/* Stop tdls timers */
+			tdls_ctx = WLAN_HDD_GET_TDLS_CTX_PTR(adapter);
+			if (tdls_ctx)
+				wlan_hdd_tdls_timers_stop(tdls_ctx);
+		}
+
+		hdd_debug("Disabling queues");
 		if (hdd_ctx->config->sap_internal_restart &&
 		    adapter->device_mode == QDF_SAP_MODE) {
 			wlan_hdd_netif_queue_control(adapter,
@@ -8849,6 +8894,10 @@ int hdd_wlan_startup(struct device *dev)
 	sme_set_chip_pwr_save_fail_cb(hdd_ctx->hHal,
 				      hdd_chip_pwr_save_fail_detected_cb);
 
+	if (hdd_ctx->config->is_force_1x1)
+		wma_cli_set_command(0, (int)WMI_PDEV_PARAM_SET_IOT_PATTERN,
+				1, PDEV_CMD);
+
 	qdf_mc_timer_start(&hdd_ctx->iface_change_timer,
 			   hdd_ctx->config->iface_change_wait_time);
 
@@ -10511,16 +10560,15 @@ static int __con_mode_handler(const char *kmessage, struct kernel_param *kp,
 	enum tQDF_GLOBAL_CON_MODE curr_mode;
 	enum tQDF_ADAPTER_MODE adapter_mode;
 
+	hdd_info("con_mode handler: %s", kmessage);
+
 	ret = wlan_hdd_validate_context(hdd_ctx);
 	if (ret)
 		return ret;
 
 	cds_set_load_in_progress(true);
 
-	hdd_info("con_mode handler: %s", kmessage);
 	ret = param_set_int(kmessage, kp);
-
-
 
 	if (!(is_con_mode_valid(con_mode))) {
 		hdd_err("invlaid con_mode %d", con_mode);

@@ -628,6 +628,7 @@ typedef enum {
 	eCSR_ROAM_RESULT_NDP_END_IND,
 	/* If Scan for SSID failed to found proper BSS */
 	eCSR_ROAM_RESULT_SCAN_FOR_SSID_FAILURE,
+	eCSR_ROAM_RESULT_INVOKE_FAILED,
 } eCsrRoamResult;
 
 /*----------------------------------------------------------------------------
@@ -1318,6 +1319,7 @@ typedef struct tagCsrConfigParam {
 	uint8_t fils_max_chan_guard_time;
 	uint16_t pkt_err_disconn_th;
 	bool is_bssid_hint_priority;
+	bool is_force_1x1;
 } tCsrConfigParam;
 
 /* Tush */
@@ -1622,7 +1624,7 @@ typedef struct tagCsrTdlsSendMgmt {
 	uint32_t peerCapability;
 	uint8_t *buf;
 	uint8_t len;
-
+	enum sir_wifi_traffic_ac ac;
 } tCsrTdlsSendMgmt;
 #endif
 

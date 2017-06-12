@@ -610,7 +610,7 @@ static void wlan_hdd_tdls_ct_timers_stop(tdlsCtx_t *hdd_tdls_ctx)
  *
  * Return: none
  */
-static void wlan_hdd_tdls_timers_stop(tdlsCtx_t *hdd_tdls_ctx)
+void wlan_hdd_tdls_timers_stop(tdlsCtx_t *hdd_tdls_ctx)
 {
 	wlan_hdd_tdls_monitor_timers_stop(hdd_tdls_ctx);
 	wlan_hdd_tdls_ct_timers_stop(hdd_tdls_ctx);
@@ -1900,17 +1900,21 @@ int wlan_hdd_tdls_set_params(struct net_device *dev,
  */
 static hdd_adapter_t *wlan_hdd_tdls_get_adapter(hdd_context_t *hdd_ctx)
 {
+	uint32_t vdev_id;
+
 	if (cds_get_connection_count() > 1)
 		return NULL;
-	if (cds_mode_specific_connection_count(QDF_STA_MODE,
-					       NULL) == 1)
-		return hdd_get_adapter(hdd_ctx,
-				       QDF_STA_MODE);
-	if (cds_mode_specific_connection_count(QDF_P2P_CLIENT_MODE,
-					       NULL) == 1)
-		return hdd_get_adapter(hdd_ctx,
-				       QDF_P2P_CLIENT_MODE);
+
+	vdev_id = cds_mode_specific_vdev_id(QDF_STA_MODE);
+	if (CDS_INVALID_VDEV_ID != vdev_id)
+		return hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
+
+	vdev_id = cds_mode_specific_vdev_id(QDF_P2P_CLIENT_MODE);
+	if (CDS_INVALID_VDEV_ID != vdev_id)
+		return hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
+
 	return NULL;
+
 }
 
 /**
@@ -2086,6 +2090,11 @@ void wlan_hdd_tdls_notify_connect(hdd_adapter_t *adapter,
 {
 	hdd_info("Check and update TDLS state");
 
+	if (cds_get_connection_count() > 1) {
+		hdd_debug("concurrent sessions exist, TDLS can't be enabled");
+		return;
+	}
+
 	/* Association event */
 	if (adapter->device_mode == QDF_STA_MODE ||
 	     adapter->device_mode == QDF_P2P_CLIENT_MODE) {
@@ -2130,6 +2139,23 @@ void wlan_hdd_tdls_notify_disconnect(hdd_adapter_t *adapter, bool lfr_roam)
 			wlan_hdd_update_tdls_info(temp_adapter,
 						  false,
 						  false);
+	}
+}
+
+void wlan_hdd_check_conc_and_update_tdls_state(hdd_context_t *hdd_ctx,
+					       bool disable_tdls)
+{
+	hdd_adapter_t *temp_adapter;
+
+	temp_adapter = wlan_hdd_tdls_get_adapter(hdd_ctx);
+	if (NULL != temp_adapter) {
+		if (disable_tdls) {
+			wlan_hdd_tdls_disable_offchan_and_teardown_links(
+								hdd_ctx);
+			wlan_hdd_update_tdls_info(temp_adapter, true, true);
+		} else {
+			wlan_hdd_update_tdls_info(temp_adapter, false, false);
+		}
 	}
 }
 
@@ -4103,6 +4129,7 @@ static int __wlan_hdd_cfg80211_tdls_mgmt(struct wiphy *wiphy,
 	peer_capability = 0;
 #endif
 #endif
+	enum sir_wifi_traffic_ac ac = WIFI_AC_VI;
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_warn("Command not allowed in FTM mode");
@@ -4174,16 +4201,13 @@ static int __wlan_hdd_cfg80211_tdls_mgmt(struct wiphy *wiphy,
 		}
 		mutex_unlock(&pHddCtx->tdls_lock);
 	}
-	/* Discard TDLS Discovery request and setup confirm if violates
-	   ACM rules */
-	if ((SIR_MAC_TDLS_DIS_REQ == action_code ||
-		SIR_MAC_TDLS_SETUP_CNF == action_code) &&
-		(hdd_wmm_is_active(pAdapter)) &&
+
+	if ((hdd_wmm_is_active(pAdapter)) &&
 		!(pAdapter->hddWmmStatus.wmmAcStatus[OL_TX_WMM_AC_VI].wmmAcAccessAllowed)) {
-			QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_ERROR,
-			"%s: Admission control is set to VI, action %d is not allowed.",
+			QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_DEBUG,
+			"%s: Admission control is set to VI, send the frame with least AC (BK) for action %d.",
 			__func__, action_code);
-			return -EPERM;
+			ac = WIFI_AC_BK;
 	}
 
 	if (SIR_MAC_TDLS_SETUP_REQ == action_code ||
@@ -4303,9 +4327,11 @@ static int __wlan_hdd_cfg80211_tdls_mgmt(struct wiphy *wiphy,
 
 	status = sme_send_tdls_mgmt_frame(WLAN_HDD_GET_HAL_CTX(pAdapter),
 					  pAdapter->sessionId, peerMac,
-					  action_code, dialog_token, status_code,
-					  peer_capability, (uint8_t *) buf, len,
-					  !responder);
+					  action_code, dialog_token,
+					  status_code, peer_capability,
+					  (uint8_t *) buf, len,
+					  !responder,
+					  ac);
 
 	if (QDF_STATUS_SUCCESS != status) {
 		QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_ERROR,

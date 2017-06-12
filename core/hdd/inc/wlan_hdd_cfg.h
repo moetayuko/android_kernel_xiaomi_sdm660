@@ -1581,6 +1581,29 @@ typedef enum {
 
 /*
  * <ini>
+ * gForce1x1Exception - force 1x1 when connecting to certain peer
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This INI when enabled will force 1x1 connection with certain peer.
+ *
+ *
+ * Related: None
+ *
+ * Supported Feature: connection
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_FORCE_1X1_NAME      "gForce1x1Exception"
+#define CFG_FORCE_1X1_MIN       (0)
+#define CFG_FORCE_1X1_MAX       (1)
+#define CFG_FORCE_1X1_DEFAULT   (0)
+
+/*
+ * <ini>
  * gEnableFastRoamInConcurrency - Enable LFR roaming on STA during concurrency
  * @Min: 0
  * @Max: 1
@@ -6383,7 +6406,7 @@ typedef enum {
 #define CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED         "gTxBFCsnValue"
 #define CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED_MIN     (WNI_CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED_STAMIN)
 #define CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED_MAX     (WNI_CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED_STAMAX - 1)
-#define CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED_DEFAULT (WNI_CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED_STAMAX - 1)
+#define CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED_DEFAULT (WNI_CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED_STADEF - 1)
 
 #define CFG_VHT_ENABLE_TXBF_IN_20MHZ               "gEnableTxBFin20MHz"
 #define CFG_VHT_ENABLE_TXBF_IN_20MHZ_MIN           (0)
@@ -10826,6 +10849,7 @@ struct hdd_config {
 	/* threshold of packet drops at which FW initiates disconnect */
 	uint16_t pkt_err_disconn_th;
 	bool is_bssid_hint_priority;
+	bool is_force_1x1;
 };
 
 #define VAR_OFFSET(_Struct, _Var) (offsetof(_Struct, _Var))

@@ -1233,6 +1233,42 @@ peer_detach:
 }
 
 /**
+ * wma_find_duplicate_peer_on_other_vdev() - Find if same peer exist
+ * on other vdevs
+ * @wma: wma handle
+ * @pdev: txrx pdev ptr
+ * @vdev_id: vdev id of vdev on which the peer
+ *           needs to be added
+ * @peer_mac: peer mac addr which needs to be added
+ *
+ * Check if peer with same MAC is present on vdev other then
+ * the provided vdev_id
+ *
+ * Return: true if same peer is present on vdev other then vdev_id
+ * else return false
+ */
+static bool wma_find_duplicate_peer_on_other_vdev(tp_wma_handle wma,
+	ol_txrx_pdev_handle pdev, uint8_t vdev_id, uint8_t *peer_mac)
+{
+	int i;
+	uint8_t peer_id;
+
+	for (i = 0; i < wma->max_bssid; i++) {
+		/* Need to check vdevs other than the vdev_id */
+		if (vdev_id == i ||
+		   !wma->interfaces[i].handle)
+			continue;
+		if (ol_txrx_find_peer_by_addr_and_vdev(pdev,
+			wma->interfaces[i].handle, peer_mac, &peer_id)) {
+			WMA_LOGE("%s :Duplicate peer %pM (peer id %d) already exist on vdev %d",
+				__func__, peer_mac, peer_id, i);
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
  * wma_create_peer() - send peer create command to fw
  * @wma: wma handle
  * @pdev: txrx pdev ptr
@@ -1254,12 +1290,22 @@ QDF_STATUS wma_create_peer(tp_wma_handle wma, ol_txrx_pdev_handle pdev,
 	struct peer_create_params param = {0};
 	uint8_t *mac_addr_raw;
 
+
 	if (++wma->interfaces[vdev_id].peer_count >
 	    wma->wlan_resource_config.num_peers) {
 		WMA_LOGP("%s, the peer count exceeds the limit %d", __func__,
 			 wma->interfaces[vdev_id].peer_count - 1);
 		goto err;
 	}
+
+	/*
+	 * Check if peer with same MAC exist on other Vdev, If so avoid
+	 * adding this peer, as it will cause FW to crash.
+	 */
+	if (wma_find_duplicate_peer_on_other_vdev(wma, pdev,
+	   vdev_id, peer_addr))
+		goto err;
+
 	peer = ol_txrx_peer_attach(vdev, peer_addr);
 	if (!peer) {
 		WMA_LOGE("%s : Unable to attach peer %pM", __func__, peer_addr);
@@ -1452,6 +1498,14 @@ static void wma_cleanup_target_req_param(struct wma_target_req *tgt_req)
 	if (tgt_req->msg_type == WMA_CHNL_SWITCH_REQ ||
 	   tgt_req->msg_type == WMA_DELETE_BSS_REQ ||
 	   tgt_req->msg_type == WMA_ADD_BSS_REQ) {
+		qdf_mem_free(tgt_req->user_data);
+		tgt_req->user_data = NULL;
+	}
+
+	if (tgt_req->msg_type == WMA_SET_LINK_STATE && tgt_req->user_data) {
+		tpLinkStateParams params =
+			(tpLinkStateParams) tgt_req->user_data;
+		qdf_mem_free(params->callbackArg);
 		qdf_mem_free(tgt_req->user_data);
 		tgt_req->user_data = NULL;
 	}
@@ -3276,7 +3330,7 @@ static void wma_add_bss_ap_mode(tp_wma_handle wma, tpAddBssParams add_bss)
 	if (!QDF_IS_STATUS_SUCCESS(status))
 		WMA_LOGE("wma_get_current_hw_mode failed");
 
-	if ((add_bss->nss == 2) && !hw_mode.dbs_cap) {
+	if (add_bss->nss == 2) {
 		req.preferred_rx_streams = 2;
 		req.preferred_tx_streams = 2;
 	} else {
@@ -3421,7 +3475,7 @@ static void wma_add_bss_ibss_mode(tp_wma_handle wma, tpAddBssParams add_bss)
 	if (!QDF_IS_STATUS_SUCCESS(status))
 		WMA_LOGE("wma_get_current_hw_mode failed");
 
-	if ((add_bss->nss == 2) && !hw_mode.dbs_cap) {
+	if (add_bss->nss == 2) {
 		req.preferred_rx_streams = 2;
 		req.preferred_tx_streams = 2;
 	} else {
@@ -3602,7 +3656,7 @@ static void wma_add_bss_sta_mode(tp_wma_handle wma, tpAddBssParams add_bss)
 			if (!QDF_IS_STATUS_SUCCESS(status))
 				WMA_LOGE("wma_get_current_hw_mode failed");
 
-			if ((add_bss->nss == 2) && !hw_mode.dbs_cap) {
+			if (add_bss->nss == 2) {
 				req.preferred_rx_streams = 2;
 				req.preferred_tx_streams = 2;
 			} else {
