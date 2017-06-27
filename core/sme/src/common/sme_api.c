@@ -12268,6 +12268,7 @@ int sme_update_ht_config(tHalHandle hHal, uint8_t sessionId, uint16_t htCapab,
 		break;
 	}
 
+	csr_roam_update_config(pMac, sessionId, htCapab, value);
 	return 0;
 }
 
@@ -17774,4 +17775,9 @@ QDF_STATUS sme_ipa_uc_stat_request(tHalHandle hal, uint32_t vdev_id,
 	qdf_mem_free(iwcmd);
 
 	return status;
+}
+
+int sme_cli_set_command(int vdev_id, int param_id, int sval, int vpdev)
+{
+	return wma_cli_set_command(vdev_id, param_id, sval, vpdev);
 }
