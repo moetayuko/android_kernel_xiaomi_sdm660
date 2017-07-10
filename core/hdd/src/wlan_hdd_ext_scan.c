@@ -92,7 +92,8 @@ static const struct nla_policy wlan_hdd_extscan_config_policy
 	[QCA_WLAN_VENDOR_ATTR_EXTSCAN_GET_CACHED_SCAN_RESULTS_CONFIG_PARAM_MAX] = {
 				.type = NLA_U32},
 	[QCA_WLAN_VENDOR_ATTR_EXTSCAN_AP_THRESHOLD_PARAM_BSSID] = {
-				.type = NLA_UNSPEC},
+				.type = NLA_UNSPEC,
+				.len = QDF_MAC_ADDR_SIZE},
 	[QCA_WLAN_VENDOR_ATTR_EXTSCAN_AP_THRESHOLD_PARAM_RSSI_LOW] = {
 				.type = NLA_S32},
 	[QCA_WLAN_VENDOR_ATTR_EXTSCAN_AP_THRESHOLD_PARAM_RSSI_HIGH] = {
@@ -108,6 +109,12 @@ static const struct nla_policy wlan_hdd_extscan_config_policy
 	[QCA_WLAN_VENDOR_ATTR_EXTSCAN_SIGNIFICANT_CHANGE_PARAMS_MIN_BREACHING] = {
 				.type = NLA_U32},
 	[QCA_WLAN_VENDOR_ATTR_EXTSCAN_SIGNIFICANT_CHANGE_PARAMS_NUM_AP] = {
+				.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_EXTSCAN_BUCKET_SPEC_MAX_PERIOD] = {
+				.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_EXTSCAN_BUCKET_SPEC_BASE] = {
+				.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_EXTSCAN_BUCKET_SPEC_STEP_COUNT] = {
 				.type = NLA_U32},
 	[QCA_WLAN_VENDOR_ATTR_EXTSCAN_SSID_THRESHOLD_PARAM_SSID] = {
 				.type = NLA_BINARY,
@@ -130,6 +137,12 @@ static const struct nla_policy wlan_hdd_extscan_config_policy
 
 static const struct nla_policy
 wlan_hdd_pno_config_policy[QCA_WLAN_VENDOR_ATTR_PNO_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_PNO_PASSPOINT_LIST_PARAM_NUM] = {
+		.type = NLA_U32
+	},
+	[QCA_WLAN_VENDOR_ATTR_PNO_PASSPOINT_NETWORK_PARAM_ID] = {
+		.type = NLA_U32
+	},
 	[QCA_WLAN_VENDOR_ATTR_PNO_SET_LIST_PARAM_NUM_NETWORKS] = {
 		.type = NLA_U32
 	},
@@ -142,6 +155,27 @@ wlan_hdd_pno_config_policy[QCA_WLAN_VENDOR_ATTR_PNO_MAX + 1] = {
 	},
 	[QCA_WLAN_VENDOR_ATTR_PNO_SET_LIST_PARAM_EPNO_NETWORK_AUTH_BIT] = {
 		.type = NLA_U8
+	},
+	[QCA_WLAN_VENDOR_ATTR_EPNO_MIN5GHZ_RSSI] = {
+		.type = NLA_U32
+	},
+	[QCA_WLAN_VENDOR_ATTR_EPNO_MIN24GHZ_RSSI] = {
+		.type = NLA_U32
+	},
+	[QCA_WLAN_VENDOR_ATTR_EPNO_INITIAL_SCORE_MAX] = {
+		.type = NLA_U32
+	},
+	[QCA_WLAN_VENDOR_ATTR_EPNO_CURRENT_CONNECTION_BONUS] = {
+		.type = NLA_U32
+	},
+	[QCA_WLAN_VENDOR_ATTR_EPNO_SAME_NETWORK_BONUS] = {
+		.type = NLA_U32
+	},
+	[QCA_WLAN_VENDOR_ATTR_EPNO_SECURE_BONUS] = {
+		.type = NLA_U32
+	},
+	[QCA_WLAN_VENDOR_ATTR_EPNO_BAND5GHZ_BONUS] = {
+		.type = NLA_U32
 	},
 };
 
@@ -2678,8 +2712,9 @@ static int hdd_extscan_start_fill_bucket_channel_spec(
 		}
 
 		if (nla_parse(bucket,
-			QCA_WLAN_VENDOR_ATTR_EXTSCAN_SUBCMD_CONFIG_PARAM_MAX,
-			nla_data(buckets), nla_len(buckets), NULL)) {
+			      QCA_WLAN_VENDOR_ATTR_EXTSCAN_SUBCMD_CONFIG_PARAM_MAX,
+			      nla_data(buckets), nla_len(buckets),
+			      wlan_hdd_extscan_config_policy)) {
 			hdd_err("nla_parse failed");
 			return -EINVAL;
 		}
@@ -4009,8 +4044,9 @@ static int hdd_extscan_passpoint_fill_network_list(
 		}
 
 		if (nla_parse(network,
-			QCA_WLAN_VENDOR_ATTR_PNO_MAX,
-			nla_data(networks), nla_len(networks), NULL)) {
+			      QCA_WLAN_VENDOR_ATTR_PNO_MAX,
+			      nla_data(networks), nla_len(networks),
+			      wlan_hdd_pno_config_policy)) {
 			hdd_err("nla_parse failed");
 			return -EINVAL;
 		}
@@ -4108,7 +4144,7 @@ static int __wlan_hdd_cfg80211_set_passpoint_list(struct wiphy *wiphy,
 	}
 
 	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_PNO_MAX, data, data_len,
-		wlan_hdd_extscan_config_policy)) {
+		      wlan_hdd_pno_config_policy)) {
 		hdd_err("Invalid ATTR");
 		return -EINVAL;
 	}
