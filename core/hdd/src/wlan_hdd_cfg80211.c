@@ -14228,9 +14228,6 @@ static int __wlan_hdd_cfg80211_disconnect(struct wiphy *wiphy,
 	int status;
 	hdd_station_ctx_t *pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
 	hdd_context_t *pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
-#ifdef FEATURE_WLAN_TDLS
-	uint8_t staIdx;
-#endif
 
 	ENTER();
 
@@ -14304,24 +14301,11 @@ static int __wlan_hdd_cfg80211_disconnect(struct wiphy *wiphy,
 		}
 		wlan_hdd_cleanup_remain_on_channel_ctx(pAdapter);
 #ifdef FEATURE_WLAN_TDLS
-		/* First clean up the tdls peers if any */
-		for (staIdx = 0; staIdx < pHddCtx->max_num_tdls_sta; staIdx++) {
-			if ((pHddCtx->tdlsConnInfo[staIdx].sessionId ==
-			     pAdapter->sessionId)
-			    && (pHddCtx->tdlsConnInfo[staIdx].staId)) {
-				uint8_t *mac;
-				mac =
-					pHddCtx->tdlsConnInfo[staIdx].peerMac.bytes;
-				hdd_notice("call sme_delete_tdls_peer_sta staId %d sessionId %d "
-				       MAC_ADDRESS_STR,
-				       pHddCtx->tdlsConnInfo[staIdx].staId,
-				       pAdapter->sessionId,
-				       MAC_ADDR_ARRAY(mac));
-				sme_delete_tdls_peer_sta(WLAN_HDD_GET_HAL_CTX
-								 (pAdapter),
-							 pAdapter->sessionId, mac);
-			}
-		}
+
+		/* First clean up the tdls peers
+		 * Send Msg to PE for deleting all the TDLS peers
+		 */
+		sme_delete_all_tdls_peers(pHddCtx->hHal, pAdapter->sessionId);
 #endif
 		hdd_notice("Disconnecting with reasoncode:%u",
 		       reasonCode);
