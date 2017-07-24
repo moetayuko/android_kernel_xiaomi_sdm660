@@ -4136,7 +4136,7 @@ QDF_STATUS wma_enable_wow_in_fw(WMA_HANDLE handle, uint32_t wow_flags)
 			 wmi_pending_cmds);
 		htc_dump_counter_info(wma->htc_handle);
 		if (!cds_is_driver_recovering())
-			QDF_BUG(0);
+			cds_trigger_recovery(false);
 		else
 			WMA_LOGE("%s: SSR in progress, ignore no credit issue",
 				 __func__);
@@ -6724,11 +6724,6 @@ static int __wma_bus_suspend(enum qdf_suspend_type type, uint32_t wow_flags)
 	if (NULL == handle) {
 		WMA_LOGE("%s: wma context is NULL", __func__);
 		return -EFAULT;
-	}
-
-	if (wma_check_scan_in_progress(handle)) {
-		WMA_LOGE("%s: Scan in progress. Aborting suspend", __func__);
-		return -EBUSY;
 	}
 
 	wma_peer_debug_log(DEBUG_INVALID_VDEV_ID, DEBUG_BUS_SUSPEND,

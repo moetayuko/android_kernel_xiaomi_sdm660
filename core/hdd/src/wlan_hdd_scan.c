@@ -1208,18 +1208,15 @@ static QDF_STATUS hdd_cfg80211_scan_done_callback(tHalHandle halHandle,
 	uint32_t size = 0;
 
 	ret = wlan_hdd_validate_context(hddctx);
-	if (0 != ret)
+	if (ret) {
+		hdd_err("Invalid hdd_ctx; Drop results for scanId %d", scanId);
 		return QDF_STATUS_E_INVAL;
+	}
 
 	hdd_notice("called with hal = %p, pContext = %p, ID = %d, status = %d",
 		   halHandle, pContext, (int)scanId, (int)status);
 
 	pScanInfo->mScanPendingCounter = 0;
-
-	if (pScanInfo->mScanPending != true) {
-		QDF_ASSERT(pScanInfo->mScanPending);
-		goto allow_suspend;
-	}
 
 	if (QDF_STATUS_SUCCESS !=
 		wlan_hdd_scan_request_dequeue(hddctx, scanId, &req, &source,
@@ -1249,7 +1246,7 @@ static QDF_STATUS hdd_cfg80211_scan_done_callback(tHalHandle halHandle,
 			 */
 			if (time_elapsed >
 			    MIN_TIME_REQUIRED_FOR_NEXT_BUG_REPORT) {
-				cds_flush_logs(WLAN_LOG_TYPE_NON_FATAL,
+				cds_flush_logs(WLAN_LOG_TYPE_FATAL,
 						WLAN_LOG_INDICATOR_HOST_DRIVER,
 						WLAN_LOG_REASON_NO_SCAN_RESULTS,
 						true, false);
@@ -1698,11 +1695,6 @@ static int __wlan_hdd_cfg80211_scan(struct wiphy *wiphy,
 		return status;
 	}
 #endif
-
-	if (pHddCtx->btCoexModeSet) {
-		cds_info("BTCoex Mode operation in progress");
-		return -EBUSY;
-	}
 
 	/* Check if scan is allowed at this point of time */
 	if (cds_is_connection_in_progress(&curr_session_id, &curr_reason)) {

@@ -7135,7 +7135,7 @@ QDF_STATUS sme_configure_suspend_ind(tHalHandle hHal,
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
 	tpAniSirGlobal pMac = PMAC_STRUCT(hHal);
-	cds_msg_t cds_message;
+	cds_msg_t cds_message = {0};
 
 	MTRACE(qdf_trace(QDF_MODULE_ID_SME,
 			 TRACE_CODE_SME_RX_HDD_CONFIG_SUSPENDIND, NO_SESSION,
@@ -8452,6 +8452,9 @@ QDF_STATUS sme_update_session_param(tHalHandle hal, uint8_t session_id,
 			sme_release_global_lock(&mac_ctx->sme);
 			return status;
 		}
+
+		if (param_type == SIR_PARAM_IGNORE_ASSOC_DISALLOWED)
+			session->ignore_assoc_disallowed = param_val;
 
 		if (!session->sessionActive)
 			QDF_ASSERT(0);

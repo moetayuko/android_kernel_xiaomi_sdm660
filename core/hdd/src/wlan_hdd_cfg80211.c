@@ -2048,6 +2048,15 @@ wlan_hdd_cfg80211_set_scanning_mac_oui(struct wiphy *wiphy,
 	return ret;
 }
 
+#define MAX_CONCURRENT_MATRIX \
+	QCA_WLAN_VENDOR_ATTR_GET_CONCURRENCY_MATRIX_MAX
+#define MATRIX_CONFIG_PARAM_SET_SIZE_MAX \
+	QCA_WLAN_VENDOR_ATTR_GET_CONCURRENCY_MATRIX_CONFIG_PARAM_SET_SIZE_MAX
+static const struct nla_policy
+wlan_hdd_get_concurrency_matrix_policy[MAX_CONCURRENT_MATRIX + 1] = {
+	[MATRIX_CONFIG_PARAM_SET_SIZE_MAX] = {.type = NLA_U32},
+};
+
 /**
  * __wlan_hdd_cfg80211_get_concurrency_matrix() - to retrieve concurrency matrix
  * @wiphy: pointer phy adapter
@@ -2066,7 +2075,7 @@ static int __wlan_hdd_cfg80211_get_concurrency_matrix(struct wiphy *wiphy,
 {
 	uint32_t feature_set_matrix[CDS_MAX_FEATURE_SET] = {0};
 	uint8_t i, feature_sets, max_feature_sets;
-	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_GET_CONCURRENCY_MATRIX_MAX + 1];
+	struct nlattr *tb[MAX_CONCURRENT_MATRIX + 1];
 	struct sk_buff *reply_skb;
 	hdd_context_t *hdd_ctx = wiphy_priv(wiphy);
 	int ret;
@@ -2082,20 +2091,19 @@ static int __wlan_hdd_cfg80211_get_concurrency_matrix(struct wiphy *wiphy,
 	if (ret)
 		return ret;
 
-	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_GET_CONCURRENCY_MATRIX_MAX,
-			data, data_len, NULL)) {
+	if (nla_parse(tb, MAX_CONCURRENT_MATRIX, data, data_len,
+		      wlan_hdd_get_concurrency_matrix_policy)) {
 		hdd_err("Invalid ATTR");
 		return -EINVAL;
 	}
 
 	/* Parse and fetch max feature set */
-	if (!tb[QCA_WLAN_VENDOR_ATTR_GET_CONCURRENCY_MATRIX_CONFIG_PARAM_SET_SIZE_MAX]) {
+	if (!tb[MATRIX_CONFIG_PARAM_SET_SIZE_MAX]) {
 		hdd_err("Attr max feature set size failed");
 		return -EINVAL;
 	}
-	max_feature_sets = nla_get_u32(tb[
-		QCA_WLAN_VENDOR_ATTR_GET_CONCURRENCY_MATRIX_CONFIG_PARAM_SET_SIZE_MAX]);
-	hdd_info("Max feature set size: %d", max_feature_sets);
+	max_feature_sets = nla_get_u32(tb[MATRIX_CONFIG_PARAM_SET_SIZE_MAX]);
+	hdd_debug("Max feature set size: %d", max_feature_sets);
 
 	/* Fill feature combination matrix */
 	feature_sets = 0;
@@ -2131,6 +2139,9 @@ static int __wlan_hdd_cfg80211_get_concurrency_matrix(struct wiphy *wiphy,
 	}
 	return cfg80211_vendor_cmd_reply(reply_skb);
 }
+
+#undef MAX_CONCURRENT_MATRIX
+#undef MATRIX_CONFIG_PARAM_SET_SIZE_MAX
 
 /**
  * wlan_hdd_cfg80211_get_concurrency_matrix() - get concurrency matrix
@@ -2315,6 +2326,42 @@ wlan_hdd_cfg80211_get_features(struct wiphy *wiphy,
 #define PRAM_SSID_LIST QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_WHITE_LIST_SSID_LIST
 #define PARAM_LIST_SSID  QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_WHITE_LIST_SSID
 
+#define MAX_ROAMING_PARAM \
+	QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_MAX
+
+static const struct nla_policy
+wlan_hdd_set_roam_param_policy[MAX_ROAMING_PARAM + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_SUBCMD] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_REQ_ID] = {.type = NLA_U32},
+	[PARAM_NUM_NW] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_A_BAND_BOOST_FACTOR] = {
+						.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_A_BAND_PENALTY_FACTOR] = {
+						.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_A_BAND_MAX_BOOST] = {
+						.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_LAZY_ROAM_HISTERESYS] = {
+						.type = NLA_S32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_A_BAND_BOOST_THRESHOLD] = {
+						.type = NLA_S32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_A_BAND_PENALTY_THRESHOLD] = {
+						.type = NLA_S32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_ALERT_ROAM_RSSI_TRIGGER] = {
+						.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_SET_LAZY_ROAM_ENABLE] = {
+						.type = NLA_S32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_SET_LAZY_ROAM_NUM_BSSID] = {
+						.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_SET_LAZY_ROAM_RSSI_MODIFIER] = {
+						.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_SET_BSSID_PARAMS_NUM_BSSID] = {
+						.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_SET_LAZY_ROAM_BSSID] = {
+						.type = NLA_UNSPEC,
+						.len = QDF_MAC_ADDR_SIZE},
+	[PARAM_SET_BSSID] = {.type = NLA_UNSPEC, .len = QDF_MAC_ADDR_SIZE},
+};
+
 /**
  * __wlan_hdd_cfg80211_set_ext_roam_params() - Settings for roaming parameters
  * @wiphy:                 The wiphy structure
@@ -2363,7 +2410,7 @@ __wlan_hdd_cfg80211_set_ext_roam_params(struct wiphy *wiphy,
 
 	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_MAX,
 		data, data_len,
-		NULL)) {
+		wlan_hdd_set_roam_param_policy)) {
 		hdd_err("Invalid ATTR");
 		return -EINVAL;
 	}
@@ -2401,7 +2448,7 @@ __wlan_hdd_cfg80211_set_ext_roam_params(struct wiphy *wiphy,
 				if (nla_parse(tb2,
 					QCA_WLAN_VENDOR_ATTR_ROAM_SUBCMD_MAX,
 					nla_data(curr_attr), nla_len(curr_attr),
-					NULL)) {
+					wlan_hdd_set_roam_param_policy)) {
 					hdd_err("nla_parse failed");
 					goto fail;
 				}
@@ -2561,7 +2608,7 @@ __wlan_hdd_cfg80211_set_ext_roam_params(struct wiphy *wiphy,
 			if (nla_parse(tb2,
 				QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_MAX,
 				nla_data(curr_attr), nla_len(curr_attr),
-				NULL)) {
+				wlan_hdd_set_roam_param_policy)) {
 				hdd_err("nla_parse failed");
 				goto fail;
 			}
@@ -2623,7 +2670,7 @@ __wlan_hdd_cfg80211_set_ext_roam_params(struct wiphy *wiphy,
 				if (nla_parse(tb2,
 				   QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_MAX,
 				   nla_data(curr_attr), nla_len(curr_attr),
-				   NULL)) {
+				   wlan_hdd_set_roam_param_policy)) {
 					hdd_err("nla_parse failed");
 					goto fail;
 				}
@@ -12547,11 +12594,6 @@ static int wlan_hdd_cfg80211_connect_start(hdd_adapter_t *pAdapter,
 		goto ret_status;
 	}
 
-	if (pHddCtx->btCoexModeSet) {
-		hdd_err("BTCoex Mode operation in progress");
-		return -EBUSY;
-	}
-
 	if (true == cds_is_connection_in_progress(NULL, NULL)) {
 		hdd_err("Connection refused: conn in progress");
 		status = -EINVAL;
@@ -15892,6 +15934,7 @@ static int __wlan_hdd_cfg80211_testmode(struct wiphy *wiphy,
 			return -ENOMEM;
 		}
 
+		qdf_mem_zero(hb_params, sizeof(tSirLPHBReq));
 		qdf_mem_copy(hb_params, buf, buf_len);
 		smeStatus =
 			sme_lphb_config_req((tHalHandle) (pHddCtx->hHal),
