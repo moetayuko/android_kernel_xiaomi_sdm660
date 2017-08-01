@@ -1760,6 +1760,7 @@ struct hdd_context_s {
 	bool rcpi_enabled;
 	bool imps_enabled;
 	int user_configured_pkt_filter_rules;
+	uint8_t curr_band;
 	struct hdd_nud_stats_context nud_stats_context;
 	uint32_t track_arp_ip;
 	struct sta_ap_intf_check_work_ctx *sta_ap_intf_check_work_info;
