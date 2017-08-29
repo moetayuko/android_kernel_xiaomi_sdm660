@@ -3303,6 +3303,14 @@ int hdd_set_fw_params(hdd_adapter_t *adapter)
 
 	if (QDF_GLOBAL_FTM_MODE != cds_get_conparam()) {
 		ret = sme_cli_set_command(adapter->sessionId,
+			WMI_PDEV_PARAM_DTIM_SYNTH,
+			hdd_ctx->config->enable_lprx, PDEV_CMD);
+		if (ret) {
+			hdd_err("Failed to set LPRx");
+			goto error;
+		}
+
+		ret = sme_cli_set_command(adapter->sessionId,
 					  WMI_PDEV_PARAM_HYST_EN,
 					  hdd_ctx->config->enableMemDeepSleep,
 					  PDEV_CMD);
