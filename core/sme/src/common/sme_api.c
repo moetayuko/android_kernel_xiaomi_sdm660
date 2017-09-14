@@ -17811,3 +17811,30 @@ int sme_cli_set_command(int vdev_id, int param_id, int sval, int vpdev)
 {
 	return wma_cli_set_command(vdev_id, param_id, sval, vpdev);
 }
+
+/**
+ * sme_set_vc_mode_config() - Set voltage corner config to FW
+ * @bitmap:	Bitmap that referes to voltage corner config with
+ * different phymode and bw configuration
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS sme_set_vc_mode_config(uint32_t vc_bitmap)
+{
+	void *wma_handle;
+
+	wma_handle = cds_get_context(QDF_MODULE_ID_WMA);
+	if (!wma_handle) {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+				"wma_handle is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+	if (QDF_STATUS_SUCCESS !=
+		wma_set_vc_mode_config(wma_handle, vc_bitmap)) {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+			"%s: Failed to set Voltage Control config to FW",
+			__func__);
+		return QDF_STATUS_E_FAILURE;
+	}
+	return QDF_STATUS_SUCCESS;
+}
