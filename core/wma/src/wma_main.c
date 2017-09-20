@@ -7728,3 +7728,17 @@ void wma_ipa_uc_stat_request(wma_cli_set_cmd_t *privcmd)
 	if (wma_set_priv_cfg(wma, privcmd))
 		WMA_LOGE("Failed to set wma priv congiuration");
 }
+
+QDF_STATUS wma_send_action_oui(WMA_HANDLE handle,
+			       struct wmi_action_oui *action_oui)
+{
+	tp_wma_handle wma_handle = (tp_wma_handle)handle;
+
+	if (wmi_unified_send_action_oui_cmd(wma_handle->wmi_handle,
+					    action_oui)) {
+		WMA_LOGE(FL("WMI_PDEV_CONFIG_VENDOR_OUI_ACTION send fail"));
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	return QDF_STATUS_SUCCESS;
+}
