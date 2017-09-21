@@ -6621,8 +6621,14 @@ static QDF_STATUS lim_send_ie(tpAniSirGlobal mac_ctx, uint32_t sme_session_id,
  *
  * Return: true if enabled and false otherwise
  */
-static inline bool lim_get_rx_ldpc(tpAniSirGlobal mac_ctx, uint8_t ch)
+static inline bool lim_get_rx_ldpc(tpAniSirGlobal mac_ctx, enum channel_enum ch)
 {
+	if (ch >= NUM_CHANNELS) {
+		lim_log(mac_ctx, LOGE,
+			FL("invalid number of channels, disable rx ldpc"));
+		return false;
+	}
+
 	if (mac_ctx->roam.configParam.rxLdpcEnable &&
 		wma_is_rx_ldpc_supported_for_channel(CDS_CHANNEL_NUM(ch)))
 		return true;

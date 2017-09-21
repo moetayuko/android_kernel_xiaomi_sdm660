@@ -50,6 +50,7 @@
 #include "qdf_lock.h"
 #include "qdf_mc_timer.h"
 #include "cds_config.h"
+#include "cds_reg_service.h"
 
 #define TX_POST_EVENT               0x001
 #define TX_SUSPEND_EVENT            0x002
@@ -334,6 +335,9 @@ typedef struct _cds_context_type {
 	uint32_t hw_mode_change_in_progress;
 	qdf_work_t cds_recovery_work;
 	qdf_workqueue_t *cds_recovery_wq;
+	enum cds_hang_reason recovery_reason;
+	uint16_t unsafe_channel_count;
+	uint16_t unsafe_channel_list[NUM_CHANNELS];
 } cds_context_type, *p_cds_contextType;
 
 extern struct _cds_sched_context *gp_cds_sched_context;
