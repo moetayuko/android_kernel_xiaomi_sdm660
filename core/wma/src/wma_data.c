@@ -2173,7 +2173,7 @@ int wma_ibss_peer_info_event_handler(void *handle, uint8_t *data,
 
 	/*sanity check */
 	if ((num_peers > 32) || (NULL == peer_info)) {
-		WMA_LOGE("%s: Invalid event data from target num_peers %d peer_info %p",
+		WMA_LOGE("%s: Invalid event data from target num_peers %d peer_info %pK",
 			__func__, num_peers, peer_info);
 		status = 1;
 		goto send_response;
@@ -2259,7 +2259,7 @@ int wma_fast_tx_fail_event_handler(void *handle, uint8_t *data,
 	if (NULL != wma->hddTxFailCb) {
 		wma->hddTxFailCb(peer_mac, tx_fail_cnt);
 	} else {
-		WMA_LOGE("%s: HDD callback is %p", __func__, wma->hddTxFailCb);
+		WMA_LOGE("%s: HDD callback is %pK", __func__, wma->hddTxFailCb);
 	}
 
 	return 0;
@@ -2974,16 +2974,14 @@ QDF_STATUS wma_tx_packet(void *wma_context, void *tx_frame, uint16_t frmLen,
 		} else {
 			mgmt_param.desc_id = wmi_desc->desc_id;
 			wmi_desc->vdev_id = vdev_id;
+			wmi_desc->nbuf = tx_frame;
+			wmi_desc->tx_cmpl_cb = tx_frm_download_comp_cb;
+			wmi_desc->ota_post_proc_cb = tx_frm_ota_comp_cb;
 			status = wmi_mgmt_unified_cmd_send(
 					wma_handle->wmi_handle,
 					&mgmt_param);
-			if (status) {
+			if (status)
 				wmi_desc_put(wma_handle, wmi_desc);
-			} else {
-				wmi_desc->nbuf = tx_frame;
-				wmi_desc->tx_cmpl_cb = tx_frm_download_comp_cb;
-				wmi_desc->ota_post_proc_cb = tx_frm_ota_comp_cb;
-			}
 		}
 	} else {
 		/* Hand over the Tx Mgmt frame to TxRx */
@@ -3172,7 +3170,7 @@ void wma_tx_abort(uint8_t vdev_id)
 
 	iface = &wma->interfaces[vdev_id];
 	if (!iface->handle) {
-		WMA_LOGE("%s: Failed to get iface handle: %p",
+		WMA_LOGE("%s: Failed to get iface handle: %pK",
 			 __func__, iface->handle);
 		return;
 	}
