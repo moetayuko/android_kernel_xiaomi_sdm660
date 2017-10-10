@@ -2034,6 +2034,7 @@ free_mem:
 	EXIT();
 	return status;
 }
+
 #undef SCAN_FAILURE
 
 /**
