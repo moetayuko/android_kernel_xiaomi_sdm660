@@ -15085,7 +15085,8 @@ int __wlan_hdd_cfg80211_del_station(struct wiphy *wiphy,
 			}
 
 			pAdapter->aStaInfo[staId].isDeauthInProgress = true;
-
+			pAdapter->cache_sta_info[staId].reason_code =
+				pDelStaParams->reason_code;
 			hdd_notice("Delete STA with MAC::" MAC_ADDRESS_STR,
 			       MAC_ADDR_ARRAY(mac));
 
@@ -16411,6 +16412,33 @@ enum cds_con_mode wlan_hdd_convert_nl_iftype_to_hdd_type(
 	}
 	return mode;
 }
+
+/**
+ * hdd_get_stainfo() - get stainfo for the specified peer
+ * @astainfo: array of station info
+ * @mac_addr: mac address of requested peer
+ *
+ * This function find the stainfo for the peer with mac_addr
+ *
+ * Return: stainfo if found, NULL if not found
+ */
+hdd_station_info_t *hdd_get_stainfo(hdd_station_info_t *astainfo,
+				    struct qdf_mac_addr mac_addr)
+{
+	hdd_station_info_t *stainfo = NULL;
+	int i;
+
+	for (i = 0; i < WLAN_MAX_STA_COUNT; i++) {
+		if (!qdf_mem_cmp(&astainfo[i].macAddrSTA,
+			&mac_addr, QDF_MAC_ADDR_SIZE)) {
+			stainfo = &astainfo[i];
+			break;
+		}
+	}
+
+	return stainfo;
+}
+
 
 /**
  * wlan_hdd_cfg80211_set_mon_ch() - Set monitor mode capture channel
