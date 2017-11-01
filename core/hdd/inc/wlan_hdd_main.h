@@ -812,8 +812,8 @@ typedef struct {
 	/** Channel Width of the connection */
 	uint8_t ch_width;
 
-	/** Mode of the connection */
-	uint8_t mode;
+	/** 802.11 Mode of the connection */
+	uint8_t dot11_mode;
 
 	/** Frequency of the current station reported from F/W */
 	uint32_t freq;
