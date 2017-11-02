@@ -2099,6 +2099,11 @@ static int wma_unified_phyerr_rx_event_handler(void *handle,
 	 */
 	n = 0;                  /* Start just after the header */
 	bufp = param_tlvs->bufp;
+	if (pe_hdr->buf_len > param_tlvs->num_bufp) {
+		WMA_LOGE("%s: Invalid Buff size %d Max allowed buf size %d",
+			   __func__, pe_hdr->buf_len, param_tlvs->num_bufp);
+		return 0;
+	}
 	while (n < pe_hdr->buf_len) {
 		/* ensure there's at least space for the header */
 		if ((pe_hdr->buf_len - n) < sizeof(ev->hdr)) {
