@@ -9067,10 +9067,12 @@ static int __wlan_hdd_cfg80211_get_nud_stats(struct wiphy *wiphy,
 	INIT_COMPLETION(context->response_event);
 	spin_unlock(&hdd_context_lock);
 
-	ol_txrx_post_data_stall_event(DATA_STALL_LOG_INDICATOR_FRAMEWORK,
-				      DATA_STALL_LOG_NUD_FAILURE,
-				      0xFF, 0XFF,
-				      DATA_STALL_LOG_RECOVERY_TRIGGER_PDR);
+	if (hdd_ctx->config->enable_data_stall_det)
+		ol_txrx_post_data_stall_event(
+					DATA_STALL_LOG_INDICATOR_FRAMEWORK,
+					DATA_STALL_LOG_NUD_FAILURE,
+					0xFF, 0XFF,
+					DATA_STALL_LOG_RECOVERY_TRIGGER_PDR);
 
 	if (QDF_STATUS_SUCCESS !=
 	    sme_get_nud_debug_stats(hdd_ctx->hHal, &arp_stats_params)) {
@@ -11402,13 +11404,21 @@ static int __wlan_hdd_cfg80211_add_key(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
-	hdd_notice("called with key index = %d & key length %d", key_index, params->key_len);
+	if (CSR_MAX_RSC_LEN < params->seq_len) {
+		hdd_err("Invalid seq length %d", params->seq_len);
+
+		return -EINVAL;
+	}
+
+	hdd_debug("key index %d, key length %d, seq length %d",
+		  key_index, params->key_len, params->seq_len);
 
 	/*extract key idx, key len and key */
 	qdf_mem_zero(&setKey, sizeof(tCsrRoamSetKey));
 	setKey.keyId = key_index;
 	setKey.keyLength = params->key_len;
 	qdf_mem_copy(&setKey.Key[0], params->key, params->key_len);
+	qdf_mem_copy(&setKey.keyRsc[0], params->seq, params->seq_len);
 
 	switch (params->cipher) {
 	case WLAN_CIPHER_SUITE_WEP40:
