@@ -683,6 +683,8 @@ void hdd_reg_notifier(struct wiphy *wiphy,
 		}
 
 		if (NL80211_REGDOM_SET_BY_CORE == request->initiator) {
+			pld_set_cc_source(hdd_ctx->parent_dev,
+						PLD_SOURCE_CORE);
 			hdd_ctx->reg.cc_src = SOURCE_CORE;
 			if (is_wiphy_custom_regulatory(wiphy))
 				reset = true;
@@ -690,7 +692,11 @@ void hdd_reg_notifier(struct wiphy *wiphy,
 			hdd_ctx->reg.cc_src = SOURCE_DRIVER;
 			sme_set_cc_src(hdd_ctx->hHal, SOURCE_DRIVER);
 		} else {
-			hdd_ctx->reg.cc_src = SOURCE_USERSPACE;
+			if (pld_get_cc_source(hdd_ctx->parent_dev)
+						== PLD_SOURCE_11D)
+				hdd_ctx->reg.cc_src = SOURCE_11D;
+			else
+				hdd_ctx->reg.cc_src = SOURCE_USERSPACE;
 			hdd_restore_custom_reg_settings(wiphy,
 							request->alpha2,
 							&reset);
