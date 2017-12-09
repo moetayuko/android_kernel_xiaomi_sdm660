@@ -1484,6 +1484,7 @@ void hdd_update_tgt_cfg(void *context, void *param)
 		hdd_warn("ini BandCapability not supported by the target");
 	}
 
+	hdd_ctx->curr_band = hdd_ctx->config->nBandCapability;
 	if (!cds_is_driver_recovering()) {
 		hdd_ctx->reg.reg_domain = cfg->reg_domain;
 		hdd_ctx->reg.eeprom_rd_ext = cfg->eeprom_rd_ext;
@@ -3911,6 +3912,7 @@ QDF_STATUS hdd_stop_adapter(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 		break;
 
 	case QDF_SAP_MODE:
+		hdd_ipa_flush(hdd_ctx);
 	case QDF_P2P_GO_MODE:
 		if (hdd_ctx->config->conc_custom_rule1 &&
 			(QDF_SAP_MODE == adapter->device_mode)) {
@@ -5732,7 +5734,7 @@ bool hdd_is_5g_supported(hdd_context_t *hdd_ctx)
 	if (!hdd_ctx || !hdd_ctx->config)
 		return true;
 
-	if (hdd_ctx->config->nBandCapability != eCSR_BAND_24)
+	if (hdd_ctx->curr_band != eCSR_BAND_24)
 		return true;
 	else
 		return false;
