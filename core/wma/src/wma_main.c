@@ -6467,6 +6467,12 @@ static void wma_set_arp_req_stats(WMA_HANDLE handle,
 		return;
 	}
 
+	if (!(wma_handle->interfaces[req_buf->vdev_id].vdev_active ||
+	      wma_handle->interfaces[req_buf->vdev_id].is_vdev_valid)) {
+		WMA_LOGE("vdev id not active or not valid");
+		return;
+	}
+
 	arp_stats = (struct set_arp_stats *)req_buf;
 	status = wmi_unified_set_arp_stats_req(wma_handle->wmi_handle,
 					       arp_stats);
