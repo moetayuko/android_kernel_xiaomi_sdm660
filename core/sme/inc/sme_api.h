@@ -942,11 +942,6 @@ QDF_STATUS sme_set_link_layer_stats_ind_cb(tHalHandle hHal,
 QDF_STATUS sme_reset_link_layer_stats_ind_cb(tHalHandle hhal);
 #endif /* WLAN_FEATURE_LINK_LAYER_STATS */
 
-QDF_STATUS sme_fw_mem_dump(tHalHandle hHal, void *recvd_req);
-QDF_STATUS sme_fw_mem_dump_register_cb(tHalHandle hHal,
-		void (*callback_routine)(void *cb_context,
-		struct fw_dump_rsp *rsp));
-QDF_STATUS sme_fw_mem_dump_unregister_cb(tHalHandle hHal);
 QDF_STATUS sme_set_wisa_params(tHalHandle hal,
 				struct sir_wisa_params *wisa_params);
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
