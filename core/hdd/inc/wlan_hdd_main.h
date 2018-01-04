@@ -1770,6 +1770,10 @@ struct hdd_context_s {
 	uint32_t track_arp_ip;
 	struct sta_ap_intf_check_work_ctx *sta_ap_intf_check_work_info;
 	qdf_wake_lock_t monitor_mode_wakelock;
+#ifdef WLAN_POWER_DEBUGFS
+	/* mutex lock to block concurrent access */
+	struct mutex power_stats_lock;
+#endif
 };
 
 /*---------------------------------------------------------------------------
