@@ -942,11 +942,6 @@ QDF_STATUS sme_set_link_layer_stats_ind_cb(tHalHandle hHal,
 QDF_STATUS sme_reset_link_layer_stats_ind_cb(tHalHandle hhal);
 #endif /* WLAN_FEATURE_LINK_LAYER_STATS */
 
-QDF_STATUS sme_fw_mem_dump(tHalHandle hHal, void *recvd_req);
-QDF_STATUS sme_fw_mem_dump_register_cb(tHalHandle hHal,
-		void (*callback_routine)(void *cb_context,
-		struct fw_dump_rsp *rsp));
-QDF_STATUS sme_fw_mem_dump_unregister_cb(tHalHandle hHal);
 QDF_STATUS sme_set_wisa_params(tHalHandle hal,
 				struct sir_wisa_params *wisa_params);
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
@@ -1509,12 +1504,14 @@ QDF_STATUS sme_get_rssi_snr_by_bssid(tHalHandle hal, tCsrRoamProfile *profile,
  * @bssid: bssid to look for in scan cache
  * @frame_buf: frame buffer to populate
  * @frame_len: length of constructed frame
+ * @channel: Pointer to channel info to be filled
  *
  * Return: QDF_STATUS
  */
 QDF_STATUS sme_get_beacon_frm(tHalHandle hal, tCsrRoamProfile *profile,
 			    const tSirMacAddr bssid,
-			    uint8_t **frame_buf, uint32_t *frame_len);
+			    uint8_t **frame_buf, uint32_t *frame_len,
+			    int *channel);
 
 /**
  * sme_rso_cmd_status_cb() - Set RSO cmd status callback
@@ -1652,5 +1649,20 @@ QDF_STATUS sme_send_action_oui(tHalHandle hal,
  * Return: QDF_STATUS
  */
 QDF_STATUS sme_set_vc_mode_config(uint32_t vc_bitmap);
+
+/**
+ * sme_fast_reassoc() - invokes FAST REASSOC command
+ * @hal: handle returned by mac_open
+ * @profile: current connected profile
+ * @bssid: bssid to look for in scan cache
+ * @channel: channel on which reassoc should be send
+ * @vdev_id: vdev id
+ * @connected_bssid: bssid of currently connected profile
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS sme_fast_reassoc(tHalHandle hal, tCsrRoamProfile *profile,
+			    const tSirMacAddr bssid, int channel,
+			    uint8_t vdev_id, const tSirMacAddr connected_bssid);
 
 #endif /* #if !defined( __SME_API_H ) */
