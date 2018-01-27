@@ -555,4 +555,8 @@
 		/delete-node/ camera_focus;
 		/delete-node/ camera_snapshot;
 	};
+
+	qcom,msm_fastrpc {
+		/delete-property/ qcom,fastrpc-vmid-heap-shared;
+	};
 };
