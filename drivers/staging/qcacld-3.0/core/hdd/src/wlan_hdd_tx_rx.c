@@ -56,6 +56,7 @@
 #include "ol_txrx.h"
 #include "wlan_hdd_nan_datapath.h"
 #include "pld_common.h"
+#include "sme_power_save_api.h"
 #include "wlan_hdd_power.h"
 #include <wlan_hdd_tsf.h>
 
