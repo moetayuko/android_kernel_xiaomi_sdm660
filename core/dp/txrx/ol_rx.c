@@ -1445,6 +1445,12 @@ ol_rx_in_order_indication_handler(ol_txrx_pdev_handle pdev,
 	uint8_t pktlog_bit;
 #endif
 	uint32_t filled = 0;
+	if (tid >= OL_TXRX_NUM_EXT_TIDS) {
+		TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
+			   "%s:  Invalid tid, %u\n", __func__, tid);
+		WARN_ON(1);
+		return;
+	}
 
 	if (pdev) {
 		if (qdf_unlikely(QDF_GLOBAL_MONITOR_MODE == cds_get_conparam()))
