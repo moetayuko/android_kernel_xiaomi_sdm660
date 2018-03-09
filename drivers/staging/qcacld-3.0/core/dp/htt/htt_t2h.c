@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -207,7 +207,8 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 	}
 	case HTT_T2H_MSG_TYPE_RX_OFFLOAD_DELIVER_IND:
 	{
-		int msdu_cnt;
+		uint16_t msdu_cnt;
+
 		msdu_cnt =
 			HTT_RX_OFFLOAD_DELIVER_IND_MSDU_CNT_GET(*msg_word);
 		ol_rx_offload_deliver_ind_handler(pdev->txrx_pdev,
@@ -443,6 +444,7 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 		uint16_t len;
 		uint8_t *op_msg_buffer;
 		uint8_t *msg_start_ptr;
+		int msg_len = qdf_nbuf_len(htt_t2h_msg);
 
 		htc_pm_runtime_put(pdev->htc_pdev);
 		msg_start_ptr = (uint8_t *) msg_word;
@@ -451,6 +453,11 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 		msg_word++;
 		len = HTT_WDI_IPA_OP_RESPONSE_RSP_LEN_GET(*msg_word);
 
+		if (sizeof(struct htt_wdi_ipa_op_response_t) + len > msg_len) {
+			qdf_print("Invalid buffer length");
+			WARN_ON(1);
+			break;
+		}
 		op_msg_buffer =
 			qdf_mem_malloc(sizeof
 				       (struct htt_wdi_ipa_op_response_t) +
@@ -472,8 +479,16 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 	{
 		uint8_t num_flows;
 		struct htt_flow_pool_map_payload_t *pool_map_payoad;
+		int msg_len = qdf_nbuf_len(htt_t2h_msg);
 
 		num_flows = HTT_FLOW_POOL_MAP_NUM_FLOWS_GET(*msg_word);
+
+		if (((HTT_FLOW_POOL_MAP_PAYLOAD_SZ /
+			HTT_FLOW_POOL_MAP_HEADER_SZ) * num_flows + 1) * sizeof(*msg_word) > msg_len) {
+			qdf_print("Invalid num_flows");
+			WARN_ON(1);
+			break;
+		}
 
 		msg_word++;
 		while (num_flows) {
@@ -597,6 +612,9 @@ static void htt_t2h_rx_in_order_indication_handler(
 }
 #endif
 
+#define HTT_TX_COMPL_HEAD_SZ			4
+#define HTT_TX_COMPL_BYTES_PER_MSDU_ID		2
+
 /* Generic Target to host Msg/event  handler  for low priority messages
    Low priority message are handler in a different handler called from
    this function . So that the most likely succes path like Rx and
@@ -685,10 +703,26 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 	{
 		int num_msdus;
 		enum htt_tx_status status;
+		int msg_len = qdf_nbuf_len(htt_t2h_msg);
 
 		/* status - no enum translation needed */
 		status = HTT_TX_COMPL_IND_STATUS_GET(*msg_word);
 		num_msdus = HTT_TX_COMPL_IND_NUM_GET(*msg_word);
+
+		/*
+		 * each desc id will occupy 2 bytes.
+		 * the 4 is for htt msg header
+		 */
+		if ((num_msdus * HTT_TX_COMPL_BYTES_PER_MSDU_ID +
+			HTT_TX_COMPL_HEAD_SZ) > msg_len) {
+			qdf_print("%s: num_msdus(%d) is invalid,"
+				"adf_nbuf_len = %d\n",
+				__FUNCTION__,
+				num_msdus,
+				msg_len);
+			break;
+		}
+
 		if (num_msdus & 0x1) {
 			struct htt_tx_compl_ind_base *compl =
 				(void *)msg_word;
@@ -764,8 +798,23 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 	case HTT_T2H_MSG_TYPE_TX_INSPECT_IND:
 	{
 		int num_msdus;
+		int msg_len = qdf_nbuf_len(htt_t2h_msg);
 
 		num_msdus = HTT_TX_COMPL_IND_NUM_GET(*msg_word);
+		/*
+		 * each desc id will occupy 2 bytes.
+		 * the 4 is for htt msg header
+		 */
+		if ((num_msdus * HTT_TX_COMPL_BYTES_PER_MSDU_ID +
+			HTT_TX_COMPL_HEAD_SZ) > msg_len) {
+			qdf_print("%s: num_msdus(%d) is invalid,"
+				"adf_nbuf_len = %d\n",
+				__FUNCTION__,
+				num_msdus,
+				msg_len);
+			break;
+		}
+
 		if (num_msdus & 0x1) {
 			struct htt_tx_compl_ind_base *compl =
 				(void *)msg_word;
@@ -879,6 +928,12 @@ void htt_t2h_msg_handler_fast(void *context, qdf_nbuf_t *cmpl_msdus,
 
 			peer_id = HTT_RX_IND_PEER_ID_GET(*msg_word);
 			tid = HTT_RX_IND_EXT_TID_GET(*msg_word);
+			if (tid >= OL_TXRX_NUM_EXT_TIDS) {
+				qdf_print("HTT_T2H_MSG_TYPE_RX_IND, invalid tid %d\n",
+					tid);
+				WARN_ON(1);
+				break;
+			}
 
 			num_msdu_bytes =
 				HTT_RX_IND_FW_RX_DESC_BYTES_GET(
@@ -911,6 +966,21 @@ void htt_t2h_msg_handler_fast(void *context, qdf_nbuf_t *cmpl_msdus,
 			/* status - no enum translation needed */
 			status = HTT_TX_COMPL_IND_STATUS_GET(*msg_word);
 			num_msdus = HTT_TX_COMPL_IND_NUM_GET(*msg_word);
+
+			/*
+			 * each desc id will occupy 2 bytes.
+			 * the 4 is for htt msg header
+			 */
+			if ((num_msdus * HTT_TX_COMPL_BYTES_PER_MSDU_ID +
+				HTT_TX_COMPL_HEAD_SZ) > msg_len) {
+				qdf_print("%s: num_msdus(%d) is invalid,"
+					"adf_nbuf_len = %d\n",
+					__FUNCTION__,
+					num_msdus,
+					msg_len);
+				break;
+			}
+
 			if (num_msdus & 0x1) {
 				struct htt_tx_compl_ind_base *compl =
 					(void *)msg_word;
@@ -970,6 +1040,20 @@ void htt_t2h_msg_handler_fast(void *context, qdf_nbuf_t *cmpl_msdus,
 			int num_msdus;
 
 			num_msdus = HTT_TX_COMPL_IND_NUM_GET(*msg_word);
+			/*
+			 * each desc id will occupy 2 bytes.
+			 * the 4 is for htt msg header
+			 */
+			if ((num_msdus * HTT_TX_COMPL_BYTES_PER_MSDU_ID +
+				HTT_TX_COMPL_HEAD_SZ) > msg_len) {
+				qdf_print("%s: num_msdus(%d) is invalid,"
+					"adf_nbuf_len = %d\n",
+					__FUNCTION__,
+					num_msdus,
+					msg_len);
+				break;
+			}
+
 			if (num_msdus & 0x1) {
 				struct htt_tx_compl_ind_base *compl =
 					(void *)msg_word;
