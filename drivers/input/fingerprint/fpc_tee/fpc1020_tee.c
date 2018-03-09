@@ -295,6 +295,25 @@ static ssize_t hw_reset_set(struct device *dev,
 }
 static DEVICE_ATTR(hw_reset, S_IWUSR, NULL, hw_reset_set);
 
+static void config_irq(struct fpc1020_data *fpc1020, bool enabled)
+{
+	static bool irq_enabled = true;
+
+	if (enabled != irq_enabled) {
+		if (enabled)
+			enable_irq(gpio_to_irq(fpc1020->irq_gpio));
+		else
+			disable_irq(gpio_to_irq(fpc1020->irq_gpio));
+
+		dev_info(fpc1020->dev, "%s: %s fpc irq ---\n", __func__,
+			enabled ?  "enable" : "disable");
+		irq_enabled = enabled;
+	} else {
+		dev_info(fpc1020->dev, "%s: dual config irq status: %s\n", __func__,
+			enabled ?  "true" : "false");
+	}
+}
+
 /**
  * Will setup GPIOs, and regulators to correctly initialize the touch sensor to
  * be ready for work.
@@ -519,13 +538,13 @@ static ssize_t proximity_state_set(struct device *dev,
 		if (fpc1020->proximity_state) {
 			/* Disable IRQ when screen is off and proximity sensor is covered */
 			mutex_lock(&fpc1020->lock);
-			disable_irq(gpio_to_irq(fpc1020->irq_gpio));
+			config_irq(fpc1020, false);
 			mutex_unlock(&fpc1020->lock);
 		} else if (atomic_read(&fpc1020->wakeup_enabled)) {
 			/* Enable IRQ when screen is off and proximity sensor is uncovered,
 			   but only if fingerprint wake up is enabled */
 			mutex_lock(&fpc1020->lock);
-			enable_irq(gpio_to_irq(fpc1020->irq_gpio));
+			config_irq(fpc1020, true);
 			mutex_unlock(&fpc1020->lock);
 		}
 	}
@@ -632,7 +651,7 @@ static int fpc_fb_notif_callback(struct notifier_block *nb,
 			if (!atomic_read(&fpc1020->wakeup_enabled) ||
 					fpc1020->proximity_state) {
 				mutex_lock(&fpc1020->lock);
-				disable_irq(gpio_to_irq(fpc1020->irq_gpio));
+				config_irq(fpc1020, false);
 				mutex_unlock(&fpc1020->lock);
 			}
 			break;
@@ -641,7 +660,7 @@ static int fpc_fb_notif_callback(struct notifier_block *nb,
 			fpc1020->fb_black = false;
 			/* Unconditionally enable IRQ when screen turns on */
 			mutex_lock(&fpc1020->lock);
-			enable_irq(gpio_to_irq(fpc1020->irq_gpio));
+			config_irq(fpc1020, true);
 			mutex_unlock(&fpc1020->lock);
 			break;
 		default:
