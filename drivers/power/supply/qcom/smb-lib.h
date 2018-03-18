@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2017 The Linux Foundation. All rights reserved.
  * Copyright (C) 2017 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -363,7 +363,6 @@ struct smb_charger {
 	int			typec_mode;
 	u32			jeita_status;
 	int			usb_icl_change_irq_enabled;
-	u8			float_cfg;
 
 	/* workaround flag */
 	u32			wa_flags;
