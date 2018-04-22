@@ -3360,7 +3360,7 @@ int smblib_get_charge_current(struct smb_charger *chg,
 	/* QC 2.0 adapter */
 	if (apsd_result->bit & QC_2P0_BIT) {
 		*total_current_ua = HVDCP2_CURRENT_UA;
-		pr_info("QC2.0 total icl: 1.5A\n");
+		pr_debug("QC2.0 total icl: 1.5A\n");
 		return 0;
 	}
 
