@@ -68,6 +68,11 @@
 	qcom,ires-ua = <13000>;
 };
 
+&pm660l_wled {
+	qcom,fs-curr-ua = <20000>;
+	qcom,en-cabc;
+};
+
 // sdm660-camera.dtsi
 &i2c_freq_400Khz {
 	qcom,hw-scl-stretch-en = <1>;
