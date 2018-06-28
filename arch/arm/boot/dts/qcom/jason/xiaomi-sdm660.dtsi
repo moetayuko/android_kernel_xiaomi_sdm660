@@ -543,6 +543,11 @@
 	qcom,sensor-name = "cam_therm0";
 };
 
+&qcom_seecom {
+	/delete-property/ qcom,fde-key-size;
+	/delete-property/ qcom,qsee-reentrancy-support;
+};
+
 &soc {
 	qcom,sensor-information {
 		sensor_information22: qcom,sensor-information-22 {
