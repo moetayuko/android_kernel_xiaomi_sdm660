@@ -555,6 +555,10 @@
 		/delete-node/ camera_focus;
 		/delete-node/ camera_snapshot;
 	};
+
+	qcom,qbt1000 {
+		status = "disabled";
+	};
 };
 
 // custom
