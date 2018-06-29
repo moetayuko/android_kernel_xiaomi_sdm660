@@ -23,6 +23,7 @@
 #include <linux/workqueue.h>
 
 #include <soc/qcom/subsystem_restart.h>
+#include <soc/qcom/socinfo.h>
 
 #define Q6_PIL_GET_DELAY_MS 100
 #define BOOT_CMD 1
@@ -127,7 +128,10 @@ load_adsp:
 				goto fail;
 			}
 
-			priv->pil_h = subsystem_get("adsp");
+			if (get_hw_version_platform() == HARDWARE_PLATFORM_JASON)
+				priv->pil_h = subsystem_get_with_fwname("adsp", "adsp_c8");
+			else
+				priv->pil_h = subsystem_get("adsp");
 			if (IS_ERR(priv->pil_h)) {
 				dev_err(&pdev->dev, "%s: pil get failed,\n",
 					__func__);
